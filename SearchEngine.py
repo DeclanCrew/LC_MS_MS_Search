@@ -34,14 +34,14 @@ class Peptide:
             return self.bIons
         except:
             bIons = [self.Peptide[:(i+1)] for i in range(len(self.Peptide)-1)]
-            self.bIons =[returnPeptideMass(bIon, self.pKey) for bIon in bIons]
+            self.bIons =[returnPeptideMass(bIon, self.pKey, 1) for bIon in bIons]
             return self.bIons
     def YIons(self):
         try:
             return self.yIons
         except:
             yIons = [self.Peptide[(i+1):] for i in range(len(self.Peptide)-1)]
-            self.yIons = [returnPeptideMass(yIon, self.pKey) for yIon in yIons]
+            self.yIons = [returnPeptideMass(yIon, self.pKey, 18) for yIon in yIons]
             return self.yIons
     def addMatch(self, peakName, score):
         if score > self.Score:
@@ -155,7 +155,7 @@ for iProtein in proteins:
 matchDB = []
 splitPeptideDB = list(Chunk(peptideDB, int(len(peptideDB)/procNumber)))
 for peak in MGFReader(MGFFile):
-#    peakNumberCounter += 1
+    peakNumberCounter += 1
     if peakNumberCounter < 10:
         print ("[+]Searching %s" % (peak["name"]))
         partMatchMasses = partial(MatchMasses, mass=peak["trueMass"], tolerance=0.5)
