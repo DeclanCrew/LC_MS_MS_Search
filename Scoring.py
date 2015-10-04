@@ -1,79 +1,13 @@
-import re
-from Bio import SeqIO
 from multiprocessing import Pool
 from functools import partial
-
-#Reads amino acid masses from tab-delimited file to dictionary, for use as reference
-def readAAMasses (iFile):
-    iData = open(iFile, "rb").readlines()
-    oData = {}
-    for line in iData:
-        entry = line.split("\t")
-        oData[str(entry[0])] = float(str(entry[1]).rstrip("\n\r"))
-    return oData
-
-#Returns mass of AA string using dictionary of AA mass values, with optional adjustment
-def returnPeptideMass (peptide, pKey, adjustment=0):
-    totalMass = 0
-    for i in peptide:
-        totalMass += pKey[i]
-    totalMass += adjustment
-    return totalMass
-
-class Peptide:
-    "Predicted peptide object."
-    def __init__(self, peptide, protein, pKey):
-        self.Peptide = peptide
-        self.Protein = protein
-        self.pKey = pKey
-        self.Mass = returnPeptideMass(peptide, self.pKey)
-        self.Score = 0
-        self.Match = []
-    def BIons(self):
-        try:
-            return self.bIons
-        except:
-            bIons = [self.Peptide[:(i+1)] for i in range(len(self.Peptide)-1)]
-            self.bIons =[returnPeptideMass(bIon, self.pKey, 1) for bIon in bIons]
-            return self.bIons
-    def YIons(self):
-        try:
-            return self.yIons
-        except:
-            yIons = [self.Peptide[(i+1):] for i in range(len(self.Peptide)-1)]
-            self.yIons = [returnPeptideMass(yIon, self.pKey, 18) for yIon in yIons]
-            return self.yIons
-    def addMatch(self, peakName, score):
-        if score > self.Score:
-            self.Score = score
-            self.Match = []
-            self.Match.append(peakName)
-        elif score == self.Score:
-            self.Match.append(peakName)
-        return
-    def maxScore(self):
-        return ((len(self.BIons())+len(self.YIons()))*7)+1
-    def relativeScore(self):
-        return float(self.Score/self.maxScore())
-    def csvOutput(self):
-        return str("%s\t%s\t%s\t%s\n" % (self.Peptide,self.Match,self.Score,(self.maxScore()-1)))
-    
+ 
 def IterAddMatch(inIter,peakDict):
     output = []
     for i in inIter:
         i.addMatch(peakDict["name"],scoreM2Peaks(peakDict["m2Peaks"], i, 1))
         output.append(i)
     return output
-        
-        
-#Generates inSilico peptide objects for input protein SeqRecord
-def iSilSpectra (protein, regex, pKey):
-    output = []
-    peptides = re.sub(r'(?<=[RK])(?=[^P])','\n', str(protein.seq))
-    for peptide in peptides.split():
-         output.append(Peptide(str(peptide), str(protein.name), pKey))
-    return output
-
+               
 #returns scores for matches in data at the M2 level
 def scoreM2Peaks (iPeakList, m1Match, tolerance):
     score = int(0)
@@ -117,11 +51,6 @@ def Chunk (iArray, length):
     for i in xrange(0, len(iArray), length):
         yield iArray[i:i+length]
 
-def returnProteinDict(protein, peptides):
-    outData = {"Protein":str(protein.name)}
-    outData["MaxTotalScore"] = (sum([i.maxScore() for i in peptides])+1)
-    return outData
-
 def returnResult(matchDB, protein):
     protein["Peptides"] =[]
     for i in matchDB:
@@ -139,20 +68,10 @@ procNumber = 6
 p = Pool(procNumber)
 
 MGFFile = open("combined.mgf","rb")
-proteinFile = open("Uniprot-TGondii-Reference.fasta", "rb")
-proteins = SeqIO.parse(proteinFile, "fasta")
-AAMassKey = readAAMasses("AAMassRef.txt")
-peptideDB = []
-proteinSet = set()
-peakNumberCounter = 0
-proteinDB = []
-print ("[+]Generating peptide database")
-for iProtein in proteins:
-    peptides = iSilSpectra(iProtein, "(?<=[KR])(?=[^P])", AAMassKey)
-    peptideDB += [i for i in peptides]
-    proteinDB.append(returnProteinDict(iProtein, peptides))
 
+peakNumberCounter = 0
 matchDB = []
+proteinSet = set()
 splitPeptideDB = list(Chunk(peptideDB, int(len(peptideDB)/procNumber)))
 for peak in MGFReader(MGFFile):
     peakNumberCounter += 1
