@@ -1,6 +1,33 @@
+import sys, getopt
 from multiprocessing import Pool
 from functools import partial
- 
+
+def inputOutput (argv):
+    options = {"maxMissedCleave":1}
+    try:
+        opts, args = getopt.getopt(argv, "hi:o:m:pc")
+    except getopt.GetoptError:
+        print "PeptideDB.py -i <inputpep> -o <output> -m <AAmassref>"
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == "-h":
+            print "PeptideDB.py -i <inputfasta> -o <outputPep> -m <AAmassref> -p <PostTranslationalMods> -c <maxMissedCleaves>"
+            sys.exit()
+        elif opt == "-i":
+            options["infile"] = arg
+        elif opt == "-o":
+            options["outfile"] = arg
+        elif opt == "-m":
+            options["massRef"] = arg
+        elif opt == "-c":
+            options["maxMissedCleave"] = arg
+    return options
+
+def csvToDictRead (icsv):
+    ifile = open(icsv, "rb")
+    idata = csv.DictReader(ifile, dialect="excel-tab")
+    return idata
+
 def IterAddMatch(inIter,peakDict):
     output = []
     for i in inIter:
@@ -39,7 +66,7 @@ def MGFReader (mgfFile):
         if "CHARGE" in line:
             outDict["charge"] = int(line[7])
         try:
-            outDict["m2Peaks"].append(float(line.split(" ")[0]))
+            outDict["m2Peaks"].append((float(line.split(" ")[0]),float(line.split(" ")[1])))
         except:
             next     
         if "END" in line:
@@ -75,7 +102,7 @@ proteinSet = set()
 splitPeptideDB = list(Chunk(peptideDB, int(len(peptideDB)/procNumber)))
 for peak in MGFReader(MGFFile):
     peakNumberCounter += 1
-    if peakNumberCounter < 10:
+    if peakNumberCounter < 3:
         print ("[+]Searching %s" % (peak["name"]))
         partMatchMasses = partial(MatchMasses, mass=peak["trueMass"], tolerance=0.5)
         massMatches = p.map(partMatchMasses,splitPeptideDB)
