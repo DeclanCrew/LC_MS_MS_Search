@@ -10,8 +10,9 @@ from scipy import stats
 
 def inputOutput (argv):
     options = {"maxMissedCleave":1}
+    print argv
     try:
-        opts, args = getopt.getopt(argv, "hi:o:m:pc")
+        opts, args = getopt.getopt(argv, "hi:o:m:p:c:")
     except getopt.GetoptError:
         print "PeptideDB.py -i <inputpep> -o <output> -m <AAmassref>"
         sys.exit(2)
@@ -45,20 +46,22 @@ def returnHyperScore (iPeakList, m1Match, tolerance):
     for iPeak in iPeakList:
         for bIon in m1Match["bIons"]:
             if abs(iPeak[0] - float(bIon)) < tolerance:
-                score +=iPeak[1]
+                ##print iPeak[1]
+              ##  print m1Match["mass"]
+                score +=(iPeak[1])
                 bCount +=1
         for yIon in m1Match["yIons"]:
             if abs(iPeak[0] - float(yIon)) < tolerance:
-                score +=iPeak[1]
+                score +=(iPeak[1])
                 yCount +=1
-    hyperScore = (score)*(np.math.factorial(bCount))*(np.math.factorial(yCount))
+    hyperScore = (float(score)*(bCount)*(yCount))
     return hyperScore
 
 #returns sublist of peptide dataset that has correct mass
 def matchMasses (searchIter, mass, tolerance):
     output = []
     for searchTerm in searchIter:
-        if abs(mass - float(searchTerm["Mass"])) < tolerance:
+        if abs(mass - float(searchTerm["mass"])) < tolerance:
             output.append(searchTerm)
     return output
 
@@ -72,20 +75,61 @@ def returnResult(matchDB, protein):
     protein["RelativeScore"] = float(protein["TotalScore"]/protein["MaxTotalScore"])
     return protein
 
-def returnEvalue (Input_array):
-    maxScore = max(Input_array)
-    n, bins = np.histogram(Input_array, len(Input_array))
-    n = [np.log((i+1)) for i in n]
-    bins = [i for i in bins]
-    while len(n) < len(bins):
-        n.append(0)
-    regressLine = stats.linregress(bins, n)
-    return np.exp((regressLine[0]*maxScore) + regressLine[1])
+def returnHistogram(Input_array):
+    histogram ={}
+    histogram["n"], histogram["bins"] = np.histogram(Input_array, int(max(Input_array)/30), density=False)
+    return histogram
+
+def returnSurvival(histogram):
+    zeroes = 0
+    output = []
+    for i in xrange(len(histogram["n"])):
+        if histogram["n"][i] == 0:
+            zeroes += 1
+        elif zeroes == 1:
+            histogram["n"][i]= 1
+        elif zeroes > 1:
+            histogram["n"][i] =0
+
+    maxIndex = 0
+    maxValue = 0
+    zeroIndex = 0
+    for i in xrange(len(histogram["n"])):
+        if histogram["n"][i] > maxValue:
+            maxValue = histogram["n"][i]
+            maxIndex = i            
+    for i in [(len(histogram["n"])-(j+1)) for j in xrange(len(histogram["n"]))]:
+        if histogram["n"][i] != 0:
+            zeroIndex = i
+            break
+    histogram["bins"] = histogram["bins"][maxIndex:(zeroIndex+2)]
+    histogram["n"] = histogram["n"][maxIndex:(zeroIndex+1)]
+
+    totalValue = 0
+    for i in xrange(len(histogram["n"])):
+        totalValue += histogram["n"][-(i+1)]
+        histogram["n"][-(i+1)] = totalValue
+
+    histogram["n"] = [convolScore(i) for i in histogram["n"]]
+    return histogram
+
+def convolScore(iScore):
+    if (iScore <= 0):
+        return 1
+    else:
+        return np.math.log10(iScore)
+        
+def returnEvalue(histogram, maxScore):
+
+  #  print str( histogram["bins"][maxIndex:zeroIndex]) +str( histogram["n"][maxIndex:zeroIndex])
+    regressLine = stats.linregress(histogram["bins"][1:(len(histogram["bins"]))], histogram["n"])
+    #print regressLine
+    return ((regressLine[0]*(maxScore)) + regressLine[1])
     
-def make_Histogram (Input_array, Set_name):
+def make_Histogram (histogram, Set_name):
     fig, ax = plt.subplots()
-    n, bins = np.histogram(Input_array, len(Input_array))
-    n = [np.log(i) for i in n]
+    n = histogram["n"]
+    bins = histogram["bins"]
     left = np.array(bins[:-1])
     right = np.array(bins[1:])
     bottom = np.zeros(len(left))
@@ -102,24 +146,43 @@ def make_Histogram (Input_array, Set_name):
     plt.savefig("Images/" + Set_name + ".png")
     return
 
+def writeToCSV (ofile, oArray):
+    keys = set()
+    for k in oArray[0]:
+        keys.add(str(k))
+    out = open(ofile,"wb")
+    dict_writer = csv.DictWriter(out, list(keys), dialect="excel-tab")
+    dict_writer.writer.writerow(list(keys))
+    dict_writer.writerows(oArray)
+    return
+
 #Sample prediction
 MGFFile = open("combined.mgf","rb")
 
 proteinSet = set()
 print "Reading peptideDB"
-peptideDB = csvToDictRead("Ref-forward.pep")
+peptideDB = csvToDictRead("FullReference.pep")
 peakListFile = open("HighestXTandemResults.list","rb")
 peakList = [i.strip("\n") for i in peakListFile.readlines()]
 peakList = ["Spectrum%s" % (i) for i in peakList]
+print "Reading MGF file"
+peaksRead = [i for i in MGFReader(MGFFile)]
+print str("MGF read %s entries found." % (len(peaksRead)))
+output = []
+counter = 0
 
-for peak in MGFReader(MGFFile):
-    print ("[+]Searching %s" % (peak["name"]))
-    m1Matches = matchMasses(peptideDB, peak["trueMass"], float(0.1))
-    hyperScoreList = []
-    maxScore = 0
-    maxEntry = dict()
-    for i in m1Matches:
-        try:
+for peak in peaksRead:
+##    print ("[+]Searching %s" % (peak["name"]))
+##    print len(peak["m2Peaks"])
+    counter += 1
+    if counter <= 1000:
+        outDict = {}
+        m1Matches = matchMasses(peptideDB, peak["trueMass"], float(0.1))
+        hyperScoreList = []
+        maxScore = 0
+        maxEntry = dict()
+        for i in m1Matches:
+           ## try:
             i["bIons"]= ast.literal_eval(i["bIons"])
             i["yIons"]= ast.literal_eval(i["yIons"])
             proteinSet.add(i["protein"])
@@ -128,12 +191,24 @@ for peak in MGFReader(MGFFile):
             if hS > maxScore:
                 maxScore = hS
                 maxEntry = i
-        except:
-            continue
-    if len(hyperScoreList) > 3:
-        try:
-            print maxEntry["peptide"]
-            print str(returnEvalue(hyperScoreList))
-        except:
-            continue
+         ##   except:
+           ##     continue
+        if len(hyperScoreList) > 3:
+            try:
+                rawHistogram = returnHistogram(hyperScoreList)
+                #make_Histogram(rawHistogram, str("ScoreHistogramDec" + peak["name"]))
+                survival = returnSurvival(rawHistogram)
+                #make_Histogram(survival, str("SurvivalFuncDec" + peak["name"]))
+                if len(survival["bins"] > 3):
+                    outDict["proteinName"] = maxEntry["protein"]
+                    outDict["peptide"] = maxEntry["peptide"]
+                    outDict["evalue"] = returnEvalue(survival, maxScore)
+                    print str("%s\t%s"%(outDict["proteinName"],outDict["evalue"]))
+                    output.append(outDict)
+            except:
+                print "Failed to Generate."
+                continue
 
+
+outFile = open("InitialResults.res","wb")
+writeToCSV(outFile, output)
