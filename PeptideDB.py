@@ -30,16 +30,15 @@ def returnIons (peptide, pKey, adjustment=0):
     return output
 
 #Returns peptideDictionary
-def returnPeptideDict (peptide, protein, pKey):
-    output = {"peptide":peptide, "proteins":[]}
-    output["proteins"].append(protein)
+def returnPeptideDict (peptide, proteins, pKey):
+    output = {"peptide":peptide, "proteins":proteins}
     output["mass"]= returnPeptideMass(peptide, pKey, float(18.009467553))
     output["bIons"]= returnIons(peptide, pKey, float(1.00727))
     output["yIons"]= returnIons(peptide[::-1], pKey, float(19.02257))
     return output
 
 #Generates inSilico peptide objects for input protein SeqRecord
-def iSilSpectra (protein, MMC, pKey, decoy=False):
+def iSilSpectra (protein, MMC, decoy=False):
     output = []
     if decoy == True:
         mProtein = str("n%sc" %(protein.seq[::-1]))
@@ -48,14 +47,14 @@ def iSilSpectra (protein, MMC, pKey, decoy=False):
             mid = ["".join(peptides[i:i+(x+1)]) for i in xrange(len(peptides)-x)]
             for i in mid:
                 for j in postTransMods(i):
-                    output.append(returnPeptideDict(j, str("DECOY_" + protein.name), pKey))
+                    output.append((j, str("DECOY_" + protein.name)))
     mProtein = str("n%sc" %(protein.seq))
     peptides = (re.sub(r"(?<=[KR])(?=[^P])",'\n', str(mProtein))).split()
     for x in xrange(MMC+1):
         mid = ["".join(peptides[i:i+(x+1)]) for i in xrange(len(peptides)-x)]
         for i in mid:
             for j in postTransMods(i):
-                output.append(returnPeptideDict(j, protein.name, pKey))
+                output.append((j, protein.name))
     return output
 
 def postTransMods (peptide, regex=0, nRegex=0, cRegex=0):
@@ -78,13 +77,24 @@ def returnPeptides (protFile, massRef, mmc, useDecoy):
     proteinFile = open(protFile, "rb")
     proteins  = SeqIO.parse(proteinFile, "fasta")
     AAMassKey = readAAMasses(massRef)
-    peptideDB = []
-    print ("[+]Generating peptide database")
+    peptideDB = {}
+    print ("[+]Digesting proteins in Silico")
     for iProtein in proteins:
+        if "X" in iProtein.seq:
+            continue
         #print ("Reading %s." % (iProtein.name))
-        peptides = iSilSpectra(iProtein, mmc, AAMassKey, useDecoy)
+        peptides = iSilSpectra(iProtein, mmc, useDecoy)
         for i in peptides:
-            peptideDB.append(i)
+            if "B" in i[0] or "Z" in i[0]:
+                continue
+            if i[0] in peptideDB:
+                #print "Appending to match: "+i[1]
+                peptideDB[i[0]].append(i[1])
+            else:
+                #print "Found new peptide: "+i[0]
+                peptideDB[i[0]] = [i[1]]
+    print "[+]Generating peptide spectra"
+    peptideList = [returnPeptideDict(key, peptideDB[key], AAMassKey) for key in peptideDB]
     print "[+]Sorting peptides"
-    return sorted(peptideDB, key=lambda entry: entry["mass"])
+    return sorted(peptideList, key=lambda entry: entry["mass"])
 

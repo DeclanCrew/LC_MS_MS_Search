@@ -44,20 +44,6 @@ def makeRoadMap (peptides, granularity):
             low = guess
             break
     return (low-2)
-
-def simplifyPeptideDB (peptideData):
-    output = []
-    while len(peptideData) > 0:
-        startPep = peptideData.pop(0)
-        while peptideData[0]["mass"] == startPep["mass"]:
-            nextPep = peptideData.pop(0)
-            if nextPep["peptide"] == startPep["peptide"]:
-                startPep["proteins"].append(nextPep["proteins"][0])
-            else:
-                peptideData.append(nextPep)
-        output.append(startPep)
-        print startPep["mass"]
-    return output
             
 def countMatches (prediction, spectra, tolerance):
     output = {"peptide":prediction["peptide"], "spec":spectra["name"] ,"proteins":prediction["proteins"],"delta":prediction["delta"], "bCount":0, "yCount":0, "bSum":0.0, "ySum":0.0}
@@ -82,10 +68,8 @@ def scoreCount (counter, yWeight, bWeight):
     score = float((counter["yCount"]*yWeight)+(counter["bCount"]*bWeight))/len(counter["peptide"]*7)
     return {"peptide": counter["peptide"], "proteins": counter["proteins"],"score": score*len(counter["peptide"])}
 
-peptides = PeptideDB.returnPeptides("Uniprot-TGondii-Reference.fasta", "AAMassRef.txt", 2, True)
+peptides = PeptideDB.returnPeptides("target-decoy-gondii.fasta", "AAMassRef.txt", 2, False)
 print "[+]"+str(len(peptides))+" peptides generated."
-#peptides = sorted(simplifyPeptideDB(peptides), key=lambda entry: entry["mass"])
-#print "[+]"+str(len(peptides))+" remaining after simplification."
 minPeptideMass = peptides[0]["mass"]
 MGFFile = open("combined.mgf", "rb")
 spectraGen = MGFParse.MGFReader(MGFFile)

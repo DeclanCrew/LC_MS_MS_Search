@@ -24,17 +24,18 @@ filteredTandemData = []
 for i in tandemData:
     if i["delta"] == None:
         continue
-    if abs(float(i["delta"]))< 0.0001:
+    if abs(float(i["delta"]))< 0.0005:
+        i["proteins"] = [i["proteins"]]
         filteredTandemData.append(i)
 sortedTandemData = sorted(filteredTandemData, key=lambda j : j["hyperscore"], reverse=True)
 
 def scoreMethod (entry):
-    #return ((5*entry["yCount"]*entry["ySum"])+(2*entry["bCount"]*entry["bSum"]))
-    return (factorial(entry["yCount"]+entry["bCount"])*(entry["ySum"]+entry["bSum"]))
+    return ((5*entry["yCount"]*entry["ySum"])+(2*entry["bCount"]*entry["bSum"]))
+    #return (factorial(entry["yCount"]+entry["bCount"])*(entry["ySum"]+entry["bSum"]))
 
 def scoreProcess (record):
     output = {"bCount":int(record["bCount"]),"spec":record["spec"],"bSum":float(record["bSum"]),"yCount":int(record["yCount"]),"ySum":float(record["ySum"]),"delta":float(record["delta"])}
-    output["proteins"] = record["proteins"]
+    output["proteins"] = [i.strip(r" '").lstrip(r" '") for i in record["proteins"].strip("[]").split(",")]
     output["length"] = len(record["peptide"])
     output["score"] = scoreMethod(output)
     output["peptide"] = record["peptide"]
@@ -42,24 +43,28 @@ def scoreProcess (record):
 
 mascotStyleData = csv.DictReader(open("scoreData.csv","rb"), dialect="excel-tab")
 scoredMascotData = returnMaxima([scoreProcess(i) for i in mascotStyleData], "score")
-sortedMascotData = sorted(scoredMascotData, key=lambda j: j["diff"], reverse=True)
+sortedMascotData = sorted(scoredMascotData, key=lambda j: j["score"], reverse=True)
 
 def returnHits (sortedData, maxFDR):
     outSet = set()
     decoyCount = 0
     count = 0
     for i in sortedData:
-        count += 1
-        if i["proteins"][0] == "D":
-            decoyCount += 100.0
-            if decoyCount/count > maxFDR:
-                print i
-                prompt = raw_input("Continue? Y/N \n")
-                if prompt == "N":
-                    break
-                else:
-                    decoyCount -= 100.0
-        outSet.add(i["proteins"])
+        if "diff" in i and i["diff"] < i["score"]/10:
+            continue
+        for j in i["proteins"]:
+            count += 1
+            if j[0] == "D":
+                decoyCount += 100.0
+                if decoyCount/count > maxFDR:
+                    print i
+                    prompt = raw_input("Continue? Y/N \n")
+                    if prompt[0] == "N":
+                        return outSet
+                    else:
+                        decoyCount -= 100.0
+            print j
+            outSet.add(j)
     return outSet
 
 mascotStyleSet = returnHits(sortedMascotData, 5)
@@ -79,8 +84,8 @@ for i in (tandemSet - mascotStyleSet):
     outfile.write(i+"\n")
     
 with sns.axes_style("darkgrid"):
-    mascotTargetScores = [(i["diff"]) for i in sortedMascotData if i["proteins"][0] == "t"]
-    mascotDecoyScores = [(i["diff"]) for i in sortedMascotData if i["proteins"][0] == "D"]
+    mascotTargetScores = [(i["diff"]) for i in sortedMascotData if i["proteins"][0][0] == "t"]
+    mascotDecoyScores = [(i["diff"]) for i in sortedMascotData if i["proteins"][0][0] == "D"]
     targetScores = [i["hyperscore"] for i in sortedTandemData]
     plt.figure()
     sns.distplot(mascotTargetScores, bins=20)
