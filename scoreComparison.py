@@ -1,6 +1,6 @@
 import csv
 import itertools
-from math import factorial
+from math import factorial, log10
 from matplotlib import pyplot as plt
 from matplotlib_venn import venn2
 import seaborn as sns
@@ -34,24 +34,33 @@ def scoreMethod (entry):
     #return (factorial(entry["yCount"]+entry["bCount"])*(entry["ySum"]+entry["bSum"]))
 
 def scoreProcess (record):
-    output = {"bCount":int(record["bCount"]),"spec":record["spec"],"bSum":float(record["bSum"]),"yCount":int(record["yCount"]),"ySum":float(record["ySum"]),"delta":float(record["delta"])}
+    output = {"bCount":int(record["bCount"]),"spec":record["spec"],
+              "bSum":float(record["bSum"]),"yCount":int(record["yCount"]),
+              "ySum":float(record["ySum"]),"delta":float(record["delta"])}
     output["proteins"] = [i.strip(r" '").lstrip(r" '") for i in record["proteins"].strip("[]").split(",")]
     output["length"] = len(record["peptide"])
     output["score"] = scoreMethod(output)
     output["peptide"] = record["peptide"]
     return output
 
+def stage2Score (record):
+    scoring_coeff = [-2.02849873e-05, -4.28916096e-06, 1.24617099e-02]
+    record["2score"] = (scoring_coeff[0]*record["ySum"]*record["yCount"]+
+                        scoring_coeff[1]*record["bSum"]*record["bCount"]+
+                        scoring_coeff[2]*record["diff"])
+    return record
+
+    
 mascotStyleData = csv.DictReader(open("scoreData.csv","rb"), dialect="excel-tab")
-scoredMascotData = returnMaxima([scoreProcess(i) for i in mascotStyleData], "score")
-sortedMascotData = sorted(scoredMascotData, key=lambda j: j["score"], reverse=True)
+scoredMascotData = returnMaxima(map(scoreProcess, mascotStyleData), "score")
+scoredMascotData = map(stage2Score, scoredMascotData)
+sortedMascotData = sorted(scoredMascotData, key=lambda j: j["2score"], reverse=True)
 
 def returnHits (sortedData, maxFDR):
     outSet = set()
     decoyCount = 0
     count = 0
     for i in sortedData:
-        if "diff" in i and i["diff"] < i["score"]/10:
-            continue
         for j in i["proteins"]:
             count += 1
             if j[0] == "D":
@@ -84,8 +93,8 @@ for i in (tandemSet - mascotStyleSet):
     outfile.write(i+"\n")
     
 with sns.axes_style("darkgrid"):
-    mascotTargetScores = [(i["diff"]) for i in sortedMascotData if i["proteins"][0][0] == "t"]
-    mascotDecoyScores = [(i["diff"]) for i in sortedMascotData if i["proteins"][0][0] == "D"]
+    mascotTargetScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "t"]
+    mascotDecoyScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "D"]
     targetScores = [i["hyperscore"] for i in sortedTandemData]
     plt.figure()
     sns.distplot(mascotTargetScores, bins=20)
@@ -112,7 +121,7 @@ print str(size)
 
 outputImage = Image.new("RGB", size)
 for j in pixels:
-    if j["proteins"][0] == "D":
+    if j["proteins"][0][0] == "D":
         outputImage.putpixel((j["x"],j["y"]), (255,0,0))
     else:
         outputImage.putpixel((j["x"],j["y"]), (0,0,255))

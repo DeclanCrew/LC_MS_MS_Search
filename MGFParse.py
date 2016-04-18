@@ -10,6 +10,31 @@ def removeNoise (iM2array, threshold):
     iM2array = sorted(iM2array, key=lambda entry: entry[1])[-threshold:]
     return sorted(iM2array, key=lambda entry: entry[0])
 
+def findDisplacements (peaks):
+    dispSet = set([28,18,17])
+    outPeaks = {"unSorted":[],"ionPeaks":[],"dispPeaks":[]}
+    frame = []
+    for i in xrange(len(peaks)):
+        size = int(round(peaks[i][0]))
+        frame.append(size)
+        print frame
+        while (size - frame[0]) > 28:
+            outPeaks["unSorted"].append(peaks[i-len(frame)+1])
+            frame.pop(0)
+        if (size - frame[0]) < 17:
+            continue
+        for j in xrange(len(frame)):
+            if (size - frame[j]) in dispSet:
+                intensityRatio = peaks[i][1]/peaks[i-len(frame)+j+1][1]
+                if intensityRatio > 1.0:
+                    outPeaks["ionPeaks"].append(peaks[i])
+                    outPeaks["dispPeaks"].append(peaks[i-len(frame)+j+1])
+        print outPeaks
+    return outPeaks
+
+def drawPeaks (peaks, colour):
+    return
+
 #returns Peak dictionaries for entries in MGFfile
 def MGFReader (mgfFile):
     outDict = {"m2Peaks":[]}
@@ -39,3 +64,11 @@ def MGFReader (mgfFile):
             outDict = {"m2Peaks":[]}
         elif(len(delimited) == 2):
             outDict["m2Peaks"].append(list((float(delimited[0]),float(delimited[1]))))
+
+##
+##MGFFile = open("combined.mgf", "rb")
+##parser = MGFReader(MGFFile)
+##for entry in parser:
+##    print entry
+##    print findDisplacements(entry["m2Peaks"])
+##    raw_input("Continue? /n")
