@@ -20,13 +20,17 @@ def returnPeptideMass (peptide, pKey, adjustment=0):
         totalMass += pKey[i]
     return totalMass
 
+#Bins ion mass predictions to the closest 0.5, to enable quicker searching later
+def coarsen (invalue, tol=0.5):
+    return int(round(invalue/tol, 0)*tol*10)
+
 #Returns list of ion masses
 def returnIons (peptide, pKey, adjustment=0):
     output = []
     mass = adjustment
     for i in peptide:
         mass += pKey[i]
-        output.append(mass)
+        output.append(coarsen(mass))
     return output
 
 #Returns peptideDictionary
@@ -96,5 +100,12 @@ def returnPeptides (protFile, massRef, mmc, useDecoy):
     print "[+]Generating peptide spectra"
     peptideList = [returnPeptideDict(key, peptideDB[key], AAMassKey) for key in peptideDB]
     print "[+]Sorting peptides"
-    return sorted(peptideList, key=lambda entry: entry["mass"])
+    outHash = {}
+    for i in sorted(peptideList, key=lambda entry: entry["mass"]):
+        if int(i["mass"]) in outHash:
+            outHash[int(i["mass"])].append(i)
+        else:
+            outHash[int(i["mass"])] = [i]
+    return outHash
+                    
 

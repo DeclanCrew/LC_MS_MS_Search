@@ -24,7 +24,7 @@ filteredTandemData = []
 for i in tandemData:
     if i["delta"] == None:
         continue
-    if abs(float(i["delta"]))< 0.0005:
+    if abs(float(i["delta"]))< 0.0001:
         i["proteins"] = [i["proteins"]]
         filteredTandemData.append(i)
 sortedTandemData = sorted(filteredTandemData, key=lambda j : j["hyperscore"], reverse=True)

@@ -1,3 +1,4 @@
+from collections import OrderedDict
 #Normalises to up to 100 range peaks in input
 def normalise (iM2array):
     output = []
@@ -6,9 +7,25 @@ def normalise (iM2array):
         output.append((iM2array[i][0],((iM2array[i][1]/iMax)*100)))        
     return output
 
+def coarsen (invalue, tol=0.5):
+    return int(round(invalue/tol, 0)*tol*10)
+
+def simplifyIons (iM2array):
+    output = OrderedDict()
+    iMax = 0
+    for i in iM2array:
+        tollBin = coarsen(i[0])
+        if tollBin in output:
+            output[tollBin] += int(i[1])
+        else:
+            output[tollBin] = int(i[1])
+    return output
+
 def removeNoise (iM2array, threshold):
-    iM2array = sorted(iM2array, key=lambda entry: entry[1])[-threshold:]
-    return sorted(iM2array, key=lambda entry: entry[0])
+    for key in iM2array:
+        if iM2array[key] < threshold:
+            del iM2array[key]
+    return iM2array
 
 def findDisplacements (peaks):
     dispSet = set([28,18,17])
@@ -56,7 +73,7 @@ def MGFReader (mgfFile):
             outDict["name"] += "-"+line[12:-2]
         elif "END" == line[:3]:
             outDict["trueMass"] = float((outDict["mass"]*outDict["charge"])-(outDict["charge"]*protonMass))
-            outDict["m2Peaks"] = removeNoise(normalise(outDict["m2Peaks"]), 50)
+            outDict["m2Peaks"] = removeNoise(simplifyIons(normalise(outDict["m2Peaks"])), 2)
             if outDict["charge"] > 4 or outDict["trueMass"] < 500 or len(outDict["m2Peaks"]) < 15:
                 outDict = {"m2Peaks":[]}
                 continue
@@ -66,9 +83,9 @@ def MGFReader (mgfFile):
             outDict["m2Peaks"].append(list((float(delimited[0]),float(delimited[1]))))
 
 ##
-##MGFFile = open("combined.mgf", "rb")
-##parser = MGFReader(MGFFile)
-##for entry in parser:
-##    print entry
+#MGFFile = open("combined.mgf", "rb")
+#parser = MGFReader(MGFFile)
+#for entry in parser:
+#    print entry
 ##    print findDisplacements(entry["m2Peaks"])
-##    raw_input("Continue? /n")
+#    raw_input("Continue? /n")

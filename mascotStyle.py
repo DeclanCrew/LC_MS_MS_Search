@@ -3,65 +3,48 @@ import PeptideDB
 import csv
 
 #returns sublist of peptide dataset that has correct mass
-def matchMasses (searchIter, mass, tolerance, roadMap):
+def matchMasses (searchIter, mass, tolerance):
     output = []
-    startPoint = 0
-    for sign in roadMap:
-        if float(sign[0]) < (mass - tolerance):
-            startPoint = sign[1]
-        else:
-            break
-    for searchTerm in searchIter[startPoint:]:
+    peptides = {}
+    for searchTerm in searchIter[int(mass)]:
         if float(searchTerm["mass"]) < (mass - tolerance):
             continue
         elif float(searchTerm["mass"]) < (mass + tolerance):
             searchTerm["delta"] = mass - float(searchTerm["mass"])
-            output.append(searchTerm)
+            searchTerm["bCount"] = 0
+            searchTerm["yCount"] = 0
+            searchTerm["bSum"] = 0
+            searchTerm["ySum"] = 0
+            peptides[searchTerm["peptide"]] = searchTerm
+            for i in searchTerm["yIons"]:
+                output.append((i, "y", searchTerm["peptide"]))
+            for j in searchTerm["bIons"]:
+                output.append((j, "b", searchTerm["peptide"]))
         else:
-            return output
+            return [sorted(output, key=lambda entry: entry[0]), peptides]
 
-def makeRoadMap (peptides, granularity):
-    high = int(peptides[-1]["mass"])+1
-    low = int(peptides[0]["mass"])
-    roadMap = []
-    index = 0
-    mapPoints = xrange(low,high,granularity)
-    mapIndex = 0
-    for peptide in peptides:
-        if peptide["mass"] > mapPoints[mapIndex]:
-            roadMap.append((mapPoints[mapIndex], (index - 1)))
-            mapIndex += 1
-        index += 1
-    return roadMap
-        
-    for i in xrange(5):
-        guess = (high+low)/2
-        if peptides[guess]["mass"] > query:
-            high = guess
-        elif peptides[guess]["mass"] < query:
-            low = guess
-        else:
-            low = guess
-            break
-    return (low-2)
-            
-def countMatches (prediction, spectra, tolerance):
-    output = {"peptide":prediction["peptide"], "spec":spectra["name"] ,"proteins":prediction["proteins"],"delta":prediction["delta"], "bCount":0, "yCount":0, "bSum":0.0, "ySum":0.0}
-    yIndex = 0
-    bIndex = 0
+def countMatches (matchList, spectra):
+    if matchList == None:
+        return []
+    matchIndex = 0
+    ions = matchList[0]
+    peptides = matchList[1]
     for i in spectra["m2Peaks"]:
-        if prediction["yIons"][yIndex] < (i[0]-tolerance) and yIndex < len(prediction["yIons"])-1:
-            yIndex +=1
-        elif prediction["yIons"][yIndex] < (i[0]+tolerance) and yIndex < len(prediction["yIons"])-1:
-            yIndex +=1
-            output["yCount"] += 1
-            output["ySum"] += i[1]
-        if prediction["bIons"][bIndex] < (i[0]-tolerance) and bIndex < len(prediction["bIons"])-1:
-            bIndex +=1
-        elif prediction["bIons"][bIndex] < (i[0]+tolerance) and bIndex < len(prediction["bIons"])-1:
-            bIndex +=1
-            output["bCount"] += 1
-            output["bSum"] += i[1]
+        if matchIndex == len(ions):
+            break
+        while ions[matchIndex][0] < i and matchIndex < (len(ions)-1):
+            matchIndex += 1
+        if matchIndex == len(ions):
+            break
+        if ions[matchIndex][0] > i:
+            continue
+        peptides[ions[matchIndex][2]][str(ions[matchIndex][1]+"Count")] += 1
+        peptides[ions[matchIndex][2]][str(ions[matchIndex][1]+"Sum")] += int(spectra["m2Peaks"][i])
+        matchIndex += 1
+    output = []
+    for entry in peptides:
+        peptides[entry]["spec"] = spectra["name"]
+        output.append(peptides[entry])
     return output
 
 def scoreCount (counter, yWeight, bWeight):
@@ -69,24 +52,21 @@ def scoreCount (counter, yWeight, bWeight):
     return {"peptide": counter["peptide"], "proteins": counter["proteins"],"score": score*len(counter["peptide"])}
 
 peptides = PeptideDB.returnPeptides("target-decoy-gondii.fasta", "AAMassRef.txt", 2, False)
-print "[+]"+str(len(peptides))+" peptides generated."
-minPeptideMass = peptides[0]["mass"]
+print "[+]"+str(len(peptides))+" mass entries generated."
 MGFFile = open("combined.mgf", "rb")
 spectraGen = MGFParse.MGFReader(MGFFile)
-roadMap = makeRoadMap(peptides, 20)
-#score = []
 
 outFile = open("scoreData.csv", "wb")
 keys = ["peptide", "spec", "proteins","delta", "bCount", "bSum", "yCount", "ySum"]
-dict_writer = csv.DictWriter(outFile, keys, dialect="excel-tab")
+dict_writer = csv.DictWriter(outFile, keys, dialect="excel-tab", extrasaction="ignore")
 dict_writer.writer.writerow(keys)
 
 for i in spectraGen:
     print "[-]Searching " + i["name"]
-    m1Matches = matchMasses(peptides, i["trueMass"], 0.0001, roadMap)
-    for j in m1Matches:
-        counter = countMatches(j, i, 0.5)
-        dict_writer.writerow(counter)
+    m1Matches = matchMasses(peptides, i["trueMass"], 0.0001)
+    counter = countMatches(m1Matches, i)
+    for result in counter:
+        dict_writer.writerow(result)
         #scoreCounter = scoreCount(countMatches(j, i, 0.5), 5, 2)
         #score.append(scoreCounter)
         #print scoreCounter
