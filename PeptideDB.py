@@ -33,6 +33,9 @@ def returnIons (peptide, pKey, adjustment=0):
         output.append(coarsen(mass))
     return output
 
+def postTranslationallyMod (peptide, ptms):
+    return
+
 #Returns peptideDictionary
 def returnPeptideDict (peptide, proteins, pKey):
     output = {"peptide":peptide, "proteins":proteins}

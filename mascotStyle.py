@@ -63,7 +63,7 @@ dict_writer.writer.writerow(keys)
 
 for i in spectraGen:
     print "[-]Searching " + i["name"]
-    m1Matches = matchMasses(peptides, i["trueMass"], 0.0001)
+    m1Matches = matchMasses(peptides, i["trueMass"], 0.001)
     counter = countMatches(m1Matches, i)
     for result in counter:
         dict_writer.writerow(result)
