@@ -53,9 +53,13 @@ def drawPeaks (peaks, colour):
     return
 
 #returns Peak dictionaries for entries in MGFfile
-def MGFReader (mgfFile):
+def MGFReader (mgfFile, conf):
     outDict = {"m2Peaks":[]}
-    protonMass = 1.007276466
+    protonMass = float(conf["other_constants"]["h+"])
+    noiseThreshold = conf["spectrum_options"]["noisethreshold"]
+    maxCharge = conf["spectrum_options"]["maxcharge"]
+    minMass = conf["spectrum_options"]["minmass"]
+    minLength = conf["spectrum_options"]["minlength"]
     while True:
         line = mgfFile.readline()
         if not line:
@@ -73,8 +77,8 @@ def MGFReader (mgfFile):
             outDict["name"] += "-"+line[12:-2]
         elif "END" == line[:3]:
             outDict["trueMass"] = float((outDict["mass"]*outDict["charge"])-(outDict["charge"]*protonMass))
-            outDict["m2Peaks"] = removeNoise(simplifyIons(normalise(outDict["m2Peaks"])), 2)
-            if outDict["charge"] > 4 or outDict["trueMass"] < 500 or len(outDict["m2Peaks"]) < 15:
+            outDict["m2Peaks"] = removeNoise(simplifyIons(normalise(outDict["m2Peaks"])), noiseThreshold)
+            if outDict["charge"] > maxCharge or outDict["trueMass"] < minMass or len(outDict["m2Peaks"]) < minLength:
                 outDict = {"m2Peaks":[]}
                 continue
             yield outDict

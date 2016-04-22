@@ -33,15 +33,16 @@ def returnIons (peptide, pKey, adjustment=0):
         output.append(coarsen(mass))
     return output
 
-def postTranslationallyMod (peptide, ptms):
+def postTranslationallyMod (AAmasses, ptms):
     return
 
 #Returns peptideDictionary
 def returnPeptideDict (peptide, proteins, pKey):
     output = {"peptide":peptide, "proteins":proteins}
-    output["mass"]= returnPeptideMass(peptide, pKey, float(18.009467553))
-    output["bIons"]= returnIons(peptide, pKey, float(1.00727))
-    output["yIons"]= returnIons(peptide[::-1], pKey, float(19.02257))
+    clean = cleanPeptide(peptide)
+    output["mass"]= returnPeptideMass(clean, pKey, float(18.009467553))
+    output["bIons"]= returnIons(clean, pKey, float(1.00727))
+    output["yIons"]= returnIons(clean[::-1], pKey, float(19.02257))
     return output
 
 #Generates inSilico peptide objects for input protein SeqRecord
@@ -53,37 +54,30 @@ def iSilSpectra (protein, MMC, decoy=False):
         for x in xrange(MMC+1):
             mid = ["".join(peptides[i:i+(x+1)]) for i in xrange(len(peptides)-x)]
             for i in mid:
-                for j in postTransMods(i):
-                    output.append((j, str("DECOY_" + protein.name)))
+                if len(i) > 3:
+                    output.append((i, str("DECOY_" + protein.name)))
     mProtein = str("n%sc" %(protein.seq))
     peptides = (re.sub(r"(?<=[KR])(?=[^P])",'\n', str(mProtein))).split()
     for x in xrange(MMC+1):
         mid = ["".join(peptides[i:i+(x+1)]) for i in xrange(len(peptides)-x)]
         for i in mid:
-            for j in postTransMods(i):
-                output.append((j, protein.name))
+            if len(i) > 3:
+                output.append((i, protein.name))
     return output
 
-def postTransMods (peptide, regex=0, nRegex=0, cRegex=0):
-    output = []
+def cleanPeptide (peptide):
     if peptide[0] == "n":
         peptide = peptide[1:]
     if peptide[len(peptide)-1] == "c":
         peptide = peptide[:(len(peptide)-1)]
-   # mods = [(m.start(), int(16)) for m in re.finditer("M",peptide)]
-    #modPerm =[]
-    #for i in xrange(2):
-    #    modPerm += itertools.combinations(mods, i+1)
-    #for m in modPerm:
-    #    output.append((peptide, m))]
-    if len(peptide) > 3:
-        output.append(peptide)
-    return output
+    return peptide
 
-def returnPeptides (protFile, massRef, mmc, useDecoy):
+def returnPeptides (protFile, conf):
     proteinFile = open(protFile, "rb")
     proteins  = SeqIO.parse(proteinFile, "fasta")
-    AAMassKey = readAAMasses(massRef)
+    AAMassKey = conf["AAMassRef"]
+    mmc = conf["search_options"]["maximum_missed_cleavages"]
+    useDecoy = bool(conf["search_options"]["include_decoy"])
     peptideDB = {}
     print ("[+]Digesting proteins in Silico")
     for iProtein in proteins:

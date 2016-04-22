@@ -43,7 +43,7 @@ for i in tandemData:
 ##    if abs(float(i["delta"]))< 0.0001:
 ##        i["proteins"] = [i["proteins"]]
 ##        filteredTandemData.append(i)
-##sortedTandemData = sorted(tandemData, key=lambda j : j["hyperscore"], reverse=True)
+sortedTandemData = sorted(filteredTandemData, key=lambda j : j["hyperscore"], reverse=True)
 
 def scoreMethod (entry):
     return ((5*entry["yCount"]*entry["ySum"])+(2*entry["bCount"]*entry["bSum"]))
@@ -69,16 +69,16 @@ def stage2Score (record):
     
 mascotStyleData = csv.DictReader(open("scoreData.csv","rb"), dialect="excel-tab")
 scoredMascotData = [i for i in returnMaxima(map(scoreProcess, mascotStyleData), "score")]
-simpDataFile = open("MascScoreData.csv", "wb")
-keys = ["peptide", "spec", "proteins", "delta", "score", "yCount", "ySum", "bCount", "bSum", "diff"]
-dict_writer = csv.DictWriter(simpDataFile, keys, dialect="excel-tab", extrasaction="ignore")
-dict_writer.writer.writerow(keys)
-for i in scoredMascotData:
-    if (i["yCount"]+i["bCount"]) > 3:
-        dict_writer.writerow(i)
-        for j in filteredTandemData:
-            if j["peptide"] == i["peptide"]:
-                dict_writer.writerow(j)
+##simpDataFile = open("MascScoreData.csv", "wb")
+##keys = ["peptide", "spec", "proteins", "delta", "score", "yCount", "ySum", "bCount", "bSum", "diff"]
+##dict_writer = csv.DictWriter(simpDataFile, keys, dialect="excel-tab", extrasaction="ignore")
+##dict_writer.writer.writerow(keys)
+##for i in scoredMascotData:
+##    if (i["yCount"]+i["bCount"]) > 3 and i["diff"] > (0.1*i["score"]):
+##        dict_writer.writerow(i)
+##        for j in filteredTandemData:
+##            if j["peptide"] == i["peptide"]:
+##                dict_writer.writerow(j)
 
 
 #for i in sorted(list(scoredMascotData + filteredTandemData), key= lambda entry: int(entry["spec"][8:].split("-")[0])):
@@ -86,53 +86,54 @@ for i in scoredMascotData:
 ##
 ##scoredMascotData = map(stage2Score, scoredMascotData)
 ##sortedMascotData = sorted(scoredMascotData, key=lambda j: j["2score"], reverse=True)
-##
-##def returnHits (sortedData, maxFDR):
-##    outSet = set()
-##    decoyCount = 0
-##    count = 0
-##    for i in sortedData:
-##        for j in i["proteins"]:
-##            count += 1
-##            if j[0] == "D":
-##                #decoyCount += 100.0
-##                if decoyCount/count > maxFDR:
-##                    print i
-##                    prompt = raw_input("Continue? Y/N \n")
-##                    if prompt[0] == "N":
-##                        return outSet
-##                    else:
-##                        decoyCount -= 100.0
-##            #print j
-##            outSet.add(j)
-##    return outSet
-##
-##mascotStyleSet = returnHits(sortedMascotData, 5)
-##tandemSet = returnHits(sortedTandemData, 5)
-##with sns.axes_style("darkgrid"):
-##    plt.figure(figsize=(4,4))
-##    venn2([mascotStyleSet, tandemSet], set_labels = ("mascotStyle", "X!Tandem"))
-##    plt.title("Venn diagram of mascotStyle hits versus X!Tandem peptide hits.")
-##    plt.show()
-##
-##print ("Number of mascotStyle Hits: "+str(len(mascotStyleSet)))
-##print ("Number of tandem Hits: "+str(len(tandemSet)))
-##print ("Number of common Hits: "+str(len(tandemSet & mascotStyleSet)))
-##
-##outfile = open("tandemunique.txt", "wb")
-##for i in (tandemSet - mascotStyleSet):
-##    outfile.write(i+"\n")
-##    
-##with sns.axes_style("darkgrid"):
-##    mascotTargetScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "t"]
-##    mascotDecoyScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "D"]
-##    targetScores = [i["hyperscore"] for i in sortedTandemData]
-##    plt.figure()
-##    sns.distplot(mascotTargetScores, bins=20)
-##    sns.distplot(mascotDecoyScores, bins=20)
-##    plt.legend()
-##    plt.show()
-##
+
+def returnHits (sortedData, maxFDR):
+    outSet = set()
+    decoyCount = 0
+    count = 0
+    for i in sortedData:
+        for j in i["proteins"]:
+            count += 1
+            if j[0] == "D":
+                decoyCount += 100.0
+                if decoyCount/count > maxFDR:
+                    print i
+                    prompt = raw_input("Continue? Y/N \n")
+                    if prompt[0] == "N":
+                        return outSet
+                    else:
+                        decoyCount -= 100.0
+            #print j
+            outSet.add(j)
+    return outSet
+
+sortedMascotData = sorted(scoredMascotData, key=lambda entry: entry["score"], reverse=True)
+mascotStyleSet = returnHits(sortedMascotData, 1)
+tandemSet = returnHits(sortedTandemData, 1)
+with sns.axes_style("darkgrid"):
+    plt.figure(figsize=(4,4))
+    venn2([mascotStyleSet, tandemSet], set_labels = ("mascotStyle", "X!Tandem"))
+    plt.title("Venn diagram of mascotStyle hits versus X!Tandem peptide hits.")
+    plt.show()
+
+print ("Number of mascotStyle Hits: "+str(len(mascotStyleSet)))
+print ("Number of tandem Hits: "+str(len(tandemSet)))
+print ("Number of common Hits: "+str(len(tandemSet & mascotStyleSet)))
+
+outfile = open("tandemunique.txt", "wb")
+for i in (tandemSet - mascotStyleSet):
+    outfile.write(i+"\n")
+    
+with sns.axes_style("darkgrid"):
+    mascotTargetScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "t"]
+    mascotDecoyScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "D"]
+    targetScores = [i["hyperscore"] for i in sortedTandemData]
+    plt.figure()
+    sns.distplot(mascotTargetScores, bins=20)
+    sns.distplot(mascotDecoyScores, bins=20)
+    plt.legend()
+    plt.show()
+
 ##maxValues = [0,0]
 ##pixels = []
 ##for i in sortedMascotData:

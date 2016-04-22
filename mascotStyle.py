@@ -1,5 +1,6 @@
 import MGFParse
 import PeptideDB
+import configs
 import csv
 
 #returns sublist of peptide dataset that has correct mass
@@ -47,14 +48,40 @@ def countMatches (matchList, spectra):
         output.append(peptides[entry])
     return output
 
+def returnPostTranslationMods (peptideDict, mods):
+    output = []
+    for i in mods:
+        index = peptideDict["peptide"].find(i)
+        while( index >= 0 ):
+            index += len(i)
+            output.append((index, mods[i]))
+            index = peptideDict["peptide"].find(i, index)
+    return output
+
+def applyPostTranslationMod (peptideDict, mods):
+    outPep = ""
+    beginning = 0
+    for i in mods:
+        substring = peptideDict["peptide"][beginning:i[0]]
+        outPep = outPep+substring
+        insert = "["+str(int(round(i[1], 0)))+"]"
+        outPep = outPep+insert
+        beginning = i[0]
+    substring = peptideDict["peptide"][beginning:]
+    outPep = outPep+substring
+    return outPep
+            
+
 def scoreCount (counter, yWeight, bWeight):
     score = float((counter["yCount"]*yWeight)+(counter["bCount"]*bWeight))/len(counter["peptide"]*7)
     return {"peptide": counter["peptide"], "proteins": counter["proteins"],"score": score*len(counter["peptide"])}
 
-peptides = PeptideDB.returnPeptides("target-decoy-gondii.fasta", "AAMassRef.txt", 2, False)
+
+conf = configs.readConfigs("mascotStyle.cfg")
+peptides = PeptideDB.returnPeptides("target-decoy-gondii.fasta", conf)
 print "[+]"+str(len(peptides))+" mass entries generated."
 MGFFile = open("combined.mgf", "rb")
-spectraGen = MGFParse.MGFReader(MGFFile)
+spectraGen = MGFParse.MGFReader(MGFFile, conf)
 
 outFile = open("scoreData.csv", "wb")
 keys = ["peptide", "spec", "proteins","delta", "bCount", "bSum", "yCount", "ySum"]
