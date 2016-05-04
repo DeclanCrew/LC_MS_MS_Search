@@ -11,6 +11,7 @@ def readAAMasses (iFile, index):
 
 def readConfigs (configFile):
     config = ConfigParser.ConfigParser()
+    config.optionxform = str
     config.read(configFile)
     output = {}
     units= {"Daltons": 1, "ppm": 0.000001}
@@ -33,5 +34,6 @@ def readConfigs (configFile):
             output["search_options"][i[:-6]] *= units[output["search_options"][i]]
     for i in output["constitutive_ptms"]:
         output["AAMassRef"][i.upper()] += output["constitutive_ptms"][i]
+    for i in output["other_constants"]:
+        output["other_constants"][i] = float(output["other_constants"][i])
     return output
-

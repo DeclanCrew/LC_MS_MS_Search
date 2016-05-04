@@ -1,24 +1,12 @@
-import sys, getopt
 import re
 import itertools
-import csv
 from Bio import SeqIO
-
-#Reads amino acid masses from tab-delimited file to dictionary, for use as reference
-def readAAMasses (iFile):
-    iData = open(iFile, "rb").readlines()
-    oData = {}
-    for line in iData:
-        entry = line.split("\t")
-        oData[str(entry[0])] = float(str(entry[1]).rstrip("\n\r"))
-    return oData
+import copy
+import operator
 
 #Returns mass of AA string using dictionary of AA mass values, with optional adjustment
 def returnPeptideMass (peptide, pKey, adjustment=0):
-    totalMass = adjustment
-    for i in peptide:
-        totalMass += pKey[i]
-    return totalMass
+    return (sum([pKey[i] for i in peptide])+adjustment)
 
 #Bins ion mass predictions to the closest 0.5, to enable quicker searching later
 def coarsen (invalue, tol=0.5):
@@ -28,40 +16,67 @@ def coarsen (invalue, tol=0.5):
 def returnIons (peptide, pKey, adjustment=0):
     output = []
     mass = adjustment
+    append = output.append    #Reduces function look up time
     for i in peptide:
         mass += pKey[i]
-        output.append(coarsen(mass))
+        append(mass)
+    return output      
+
+def returnPostTranslationMods (peptideDict, mods):
+    output = []
+    for i in mods:
+        index = peptideDict["peptide"].find(i[0])
+        while( index >= 0 ):
+            index += len(i[0])
+            output.append((index, i[1]))
+            index = peptideDict["peptide"].find(i[0], index)
     return output
 
-def postTranslationallyMod (AAmasses, ptms):
-    return
-
-#Returns peptideDictionary
-def returnPeptideDict (peptide, proteins, pKey):
-    output = {"peptide":peptide, "proteins":proteins}
+def genModdedPeptide (peptide, mods):
     clean = cleanPeptide(peptide)
     output["mass"]= returnPeptideMass(clean, pKey, float(18.009467553))
     output["bIons"]= returnIons(clean, pKey, float(1.00727))
     output["yIons"]= returnIons(clean[::-1], pKey, float(19.02257))
+    outPep = ""
+    beginning = 0
+    for i in mods:
+        substring = peptideDict["peptide"][beginning:i[0]]
+        outPep = outPep+substring
+        insert = str("[%s]" % (int(round(i[1], 0))))
+        outPep = outPep+insert
+        beginning = i[0]
+        for j in xrange(i[0]):
+            output["bIons"][j] += i[1]
+            output["yIons"][-(1+j)] += i[1]
+        output["mass"] += i[1]
+    substring = peptideDict["peptide"][beginning:]
+    outPep = outPep+substring
+    output["bIons"]= map(coarsen, returnIons(clean, pKey, float(1.00727)))
+    output["yIons"]= map(coarsen, returnIons(clean[::-1], pKey, float(19.02257)))
+    return outPep
+
+def refine (peptide, conf):
+    modifications = [(x, conf["variable_ptms"][x]) for x in conf["variable_ptms"]]
+    return
+
+#Returns peptideDictionary
+def returnPeptideDict (peptide, proteins, conf):
+    output = {"peptide":peptide, "proteins":proteins}
+    clean = cleanPeptide(peptide)
+    output["mass"]= returnPeptideMass(clean, conf["AAMassRef"], conf["other_constants"]["Mass+"])
+    output["bIons"]= map(coarsen, returnIons(clean, conf["AAMassRef"], conf["other_constants"]["B+"]))
+    output["yIons"]= map(coarsen, returnIons(clean[::-1], conf["AAMassRef"], conf["other_constants"]["Y+"]))
     return output
 
 #Generates inSilico peptide objects for input protein SeqRecord
-def iSilSpectra (protein, MMC, decoy=False):
+def iSilSpectra (protein, regEx, conf):
     output = []
-    if decoy == True:
-        mProtein = str("n%sc" %(protein.seq[::-1]))
-        peptides = (re.sub(r"(?<=[KR])(?=[^P])",'\n', str(mProtein))).split()
-        for x in xrange(MMC+1):
-            mid = ["".join(peptides[i:i+(x+1)]) for i in xrange(len(peptides)-x)]
-            for i in mid:
-                if len(i) > 3:
-                    output.append((i, str("DECOY_" + protein.name)))
     mProtein = str("n%sc" %(protein.seq))
-    peptides = (re.sub(r"(?<=[KR])(?=[^P])",'\n', str(mProtein))).split()
-    for x in xrange(MMC+1):
+    peptides = regEx.sub('\n', str(mProtein)).split()
+    for x in xrange(conf["search_options"]["maximum_missed_cleavages"]+1):
         mid = ["".join(peptides[i:i+(x+1)]) for i in xrange(len(peptides)-x)]
         for i in mid:
-            if len(i) > 3:
+            if len(i) >= conf["search_options"]["min_peptide_length"]:
                 output.append((i, protein.name))
     return output
 
@@ -72,30 +87,39 @@ def cleanPeptide (peptide):
         peptide = peptide[:(len(peptide)-1)]
     return peptide
 
+def proteinPreprocessing (proteins, conf, maxX=1, maxB=4):
+    output = []
+    useDecoy = bool(conf["search_options"]["include_decoy"])
+    append = output.append
+    for protein in proteins:
+        if "X" in protein.seq:
+            continue
+        elif "B" in protein.seq or "Z" in protein.seq:
+            continue
+        else:
+            append(protein)
+        if useDecoy == True:
+            decoy = copy.deepcopy(protein)
+            decoy.seq = protein.seq[::-1]
+            decoy.name = str("DECOY_%s" % (protein.name))
+            append(decoy)
+    return output
+            
 def returnPeptides (protFile, conf):
     proteinFile = open(protFile, "rb")
     proteins  = SeqIO.parse(proteinFile, "fasta")
-    AAMassKey = conf["AAMassRef"]
-    mmc = conf["search_options"]["maximum_missed_cleavages"]
-    useDecoy = bool(conf["search_options"]["include_decoy"])
     peptideDB = {}
     print ("[+]Digesting proteins in Silico")
-    for iProtein in proteins:
-        if "X" in iProtein.seq:
-            continue
-        #print ("Reading %s." % (iProtein.name))
-        peptides = iSilSpectra(iProtein, mmc, useDecoy)
+    matchingRegex = re.compile(r"(?<=[KR])(?=[^P])")
+    for iProtein in proteinPreprocessing(proteins, conf):
+        peptides = iSilSpectra(iProtein, matchingRegex, conf)
         for i in peptides:
-            if "B" in i[0] or "Z" in i[0]:
-                continue
-            if i[0] in peptideDB:
-                #print "Appending to match: "+i[1]
+            try:
                 peptideDB[i[0]].append(i[1])
-            else:
-                #print "Found new peptide: "+i[0]
+            except KeyError:
                 peptideDB[i[0]] = [i[1]]
     print "[+]Generating peptide spectra"
-    peptideList = [returnPeptideDict(key, peptideDB[key], AAMassKey) for key in peptideDB]
+    peptideList = [returnPeptideDict(key, peptideDB[key], conf) for key in peptideDB]
     print "[+]Sorting peptides"
     outHash = {}
     for i in sorted(peptideList, key=lambda entry: entry["mass"]):
@@ -104,5 +128,3 @@ def returnPeptides (protFile, conf):
         else:
             outHash[int(i["mass"])] = [i]
     return outHash
-                    
-

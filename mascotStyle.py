@@ -46,31 +46,7 @@ def countMatches (matchList, spectra):
     for entry in peptides:
         peptides[entry]["spec"] = spectra["name"]
         output.append(peptides[entry])
-    return output
-
-def returnPostTranslationMods (peptideDict, mods):
-    output = []
-    for i in mods:
-        index = peptideDict["peptide"].find(i)
-        while( index >= 0 ):
-            index += len(i)
-            output.append((index, mods[i]))
-            index = peptideDict["peptide"].find(i, index)
-    return output
-
-def applyPostTranslationMod (peptideDict, mods):
-    outPep = ""
-    beginning = 0
-    for i in mods:
-        substring = peptideDict["peptide"][beginning:i[0]]
-        outPep = outPep+substring
-        insert = "["+str(int(round(i[1], 0)))+"]"
-        outPep = outPep+insert
-        beginning = i[0]
-    substring = peptideDict["peptide"][beginning:]
-    outPep = outPep+substring
-    return outPep
-            
+    return output         
 
 def scoreCount (counter, yWeight, bWeight):
     score = float((counter["yCount"]*yWeight)+(counter["bCount"]*bWeight))/len(counter["peptide"]*7)

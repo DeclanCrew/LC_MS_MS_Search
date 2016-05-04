@@ -28,7 +28,7 @@ def returnMaxima (generator, value):
 ##    spectraNames[counter] = i["name"]
 ##    counter += 1
 ##print counter
-tandemData = csv.DictReader(open("newTandemData.csv","rb"), dialect="excel-tab")
+tandemData = [i for i in csv.DictReader(open("newTandemData.csv","rb"), dialect="excel-tab")]
 filteredTandemData = []
 
 for i in tandemData:
@@ -37,6 +37,7 @@ for i in tandemData:
 ##    i["spec"] = spectraNames[int(i["spectrum"])]
     i["spec"] = int(i["spectrum"])
     i["score"] = i["hyperscore"]
+    i["proteins"] = [i["proteins"]]
     filteredTandemData.append(i)
 ##    if i["delta"] == None:
 ##        continue
@@ -45,17 +46,17 @@ for i in tandemData:
 ##        filteredTandemData.append(i)
 sortedTandemData = sorted(filteredTandemData, key=lambda j : j["hyperscore"], reverse=True)
 
-def scoreMethod (entry):
-    return ((5*entry["yCount"]*entry["ySum"])+(2*entry["bCount"]*entry["bSum"]))
+def scoreMethod (entry, bias=2.5):
+    return ((bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"]))
     #return (factorial(entry["yCount"]+entry["bCount"])*(entry["ySum"]+entry["bSum"]))
 
-def scoreProcess (record):
+def scoreProcess (record, bias=2.5):
     output = {"bCount":int(record["bCount"]),"spec":record["spec"],
               "bSum":float(record["bSum"]),"yCount":int(record["yCount"]),
               "ySum":float(record["ySum"]),"delta":float(record["delta"])}
     output["proteins"] = [i.strip(r" '").lstrip(r" '") for i in record["proteins"].strip("[]").split(",")]
     output["length"] = len(record["peptide"])
-    output["score"] = scoreMethod(output)
+    output["score"] = scoreMethod(output, bias=bias)
     output["peptide"] = record["peptide"]
     return output
 
@@ -66,9 +67,25 @@ def stage2Score (record):
                         scoring_coeff[2]*record["diff"])
     return record
 
-    
-mascotStyleData = csv.DictReader(open("scoreData.csv","rb"), dialect="excel-tab")
-scoredMascotData = [i for i in returnMaxima(map(scoreProcess, mascotStyleData), "score")]
+def findSolution (recordList):
+    targetList = filter(lambda entry: "DECOY" not in entry["proteins"][0], recordList)
+    maxDecoy = max(recordList, key= lambda entry: entry["score"])
+    yStat = lambda entry: (entry["yCount"]*entry["ySum"])
+    bStat = lambda entry: (entry["bCount"]*entry["bSum"])
+    maxTargetY = max(targetList, key=yStat)
+    maxTargetB = max(targetList, key=bStat)
+    print maxTargetY
+    print maxTargetB
+    if yStat(maxTargetY) > yStat(maxDecoy):
+        return ((bStat(maxDecoy) - bStat(maxTargetY))/(yStat(maxTargetY)-yStat(maxDecoy)))
+    elif bStat(maxTargetB) > bStat(maxDecoy):
+        return ((bStat(maxTargetB) - bStat(maxDecoy))/(yStat(maxDecoy)-yStat(maxTargetB)))
+    else:
+        return -1
+        
+
+mascotStyleData = map(scoreProcess, [i for i in csv.DictReader(open("scoreData.csv","rb"), dialect="excel-tab")])
+scoredMascotData = [i for i in returnMaxima(mascotStyleData, "score")]
 ##simpDataFile = open("MascScoreData.csv", "wb")
 ##keys = ["peptide", "spec", "proteins", "delta", "score", "yCount", "ySum", "bCount", "bSum", "diff"]
 ##dict_writer = csv.DictWriter(simpDataFile, keys, dialect="excel-tab", extrasaction="ignore")
@@ -87,7 +104,7 @@ scoredMascotData = [i for i in returnMaxima(map(scoreProcess, mascotStyleData), 
 ##scoredMascotData = map(stage2Score, scoredMascotData)
 ##sortedMascotData = sorted(scoredMascotData, key=lambda j: j["2score"], reverse=True)
 
-def returnHits (sortedData, maxFDR):
+def returnHits (sortedData, totalData, maxFDR):
     outSet = set()
     decoyCount = 0
     count = 0
@@ -97,23 +114,25 @@ def returnHits (sortedData, maxFDR):
             if j[0] == "D":
                 decoyCount += 100.0
                 if decoyCount/count > maxFDR:
+                    print count
                     print i
+                    #print findSolution(filter(lambda entry: entry["spec"]==i["spec"], totalData)) 
                     prompt = raw_input("Continue? Y/N \n")
                     if prompt[0] == "N":
                         return outSet
                     else:
                         decoyCount -= 100.0
             #print j
-            outSet.add(j)
+            outSet.add(i["peptide"])
     return outSet
 
-sortedMascotData = sorted(scoredMascotData, key=lambda entry: entry["score"], reverse=True)
-mascotStyleSet = returnHits(sortedMascotData, 1)
-tandemSet = returnHits(sortedTandemData, 1)
+sortedMascotData = sorted(scoredMascotData, key=lambda entry: entry["diff"], reverse=True)
+mascotStyleSet = returnHits(sortedMascotData, mascotStyleData, 1)
+tandemSet = returnHits(sortedTandemData, tandemData, 1)
 with sns.axes_style("darkgrid"):
     plt.figure(figsize=(4,4))
     venn2([mascotStyleSet, tandemSet], set_labels = ("mascotStyle", "X!Tandem"))
-    plt.title("Venn diagram of mascotStyle hits versus X!Tandem peptide hits.")
+    plt.title("Venn diagram of peptide hits.")
     plt.show()
 
 print ("Number of mascotStyle Hits: "+str(len(mascotStyleSet)))
@@ -125,8 +144,8 @@ for i in (tandemSet - mascotStyleSet):
     outfile.write(i+"\n")
     
 with sns.axes_style("darkgrid"):
-    mascotTargetScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "t"]
-    mascotDecoyScores = [log10(i["score"]+1) for i in sortedMascotData if i["proteins"][0][0] == "D"]
+    mascotTargetScores = [log10(i["diff"]) for i in sortedMascotData if i["proteins"][0][0] == "t" and i["diff"] > 0]
+    mascotDecoyScores = [log10(i["diff"]) for i in sortedMascotData if i["proteins"][0][0] == "D" and i["diff"] > 0]
     targetScores = [i["hyperscore"] for i in sortedTandemData]
     plt.figure()
     sns.distplot(mascotTargetScores, bins=20)

@@ -1,16 +1,18 @@
 from collections import OrderedDict
+
 #Normalises to up to 100 range peaks in input
 def normalise (iM2array):
     output = []
     iMax = max(iM2array, key=lambda entry: entry[1])[1]
-    for i in xrange(len(iM2array)):
-        output.append((iM2array[i][0],((iM2array[i][1]/iMax)*100)))        
+    append = output.append
+    for i in iM2array:
+        append((i[0],((i[1]/iMax)*100)))        
     return output
 
 def coarsen (invalue, tol=0.5):
     return int(round(invalue/tol, 0)*tol*10)
 
-def simplifyIons (iM2array):
+def simplifyIons (iM2array, threshold):
     output = OrderedDict()
     iMax = 0
     for i in iM2array:
@@ -19,47 +21,16 @@ def simplifyIons (iM2array):
             output[tollBin] += int(i[1])
         else:
             output[tollBin] = int(i[1])
-    return output
+    return {key: value for key, value in output.iteritems() if value >= threshold}
 
-def removeNoise (iM2array, threshold):
-    for key in iM2array:
-        if iM2array[key] < threshold:
-            del iM2array[key]
-    return iM2array
-
-def findDisplacements (peaks):
-    dispSet = set([28,18,17])
-    outPeaks = {"unSorted":[],"ionPeaks":[],"dispPeaks":[]}
-    frame = []
-    for i in xrange(len(peaks)):
-        size = int(round(peaks[i][0]))
-        frame.append(size)
-        print frame
-        while (size - frame[0]) > 28:
-            outPeaks["unSorted"].append(peaks[i-len(frame)+1])
-            frame.pop(0)
-        if (size - frame[0]) < 17:
-            continue
-        for j in xrange(len(frame)):
-            if (size - frame[j]) in dispSet:
-                intensityRatio = peaks[i][1]/peaks[i-len(frame)+j+1][1]
-                if intensityRatio > 1.0:
-                    outPeaks["ionPeaks"].append(peaks[i])
-                    outPeaks["dispPeaks"].append(peaks[i-len(frame)+j+1])
-        print outPeaks
-    return outPeaks
-
-def drawPeaks (peaks, colour):
-    return
-
-#returns Peak dictionaries for entries in MGFfile
+#Returns Peak dictionaries for entries in MGFfile
 def MGFReader (mgfFile, conf):
     outDict = {"m2Peaks":[]}
-    protonMass = float(conf["other_constants"]["h+"])
-    noiseThreshold = conf["spectrum_options"]["noisethreshold"]
-    maxCharge = conf["spectrum_options"]["maxcharge"]
-    minMass = conf["spectrum_options"]["minmass"]
-    minLength = conf["spectrum_options"]["minlength"]
+    protonMass = float(conf["other_constants"]["H+"])
+    noiseThreshold = conf["spectrum_options"]["noiseThreshold"]
+    maxCharge = conf["spectrum_options"]["maxCharge"]
+    minMass = conf["spectrum_options"]["minMass"]
+    minLength = conf["spectrum_options"]["minLength"]
     while True:
         line = mgfFile.readline()
         if not line:
@@ -77,7 +48,7 @@ def MGFReader (mgfFile, conf):
             outDict["name"] += "-"+line[12:-2]
         elif "END" == line[:3]:
             outDict["trueMass"] = float((outDict["mass"]*outDict["charge"])-(outDict["charge"]*protonMass))
-            outDict["m2Peaks"] = removeNoise(simplifyIons(normalise(outDict["m2Peaks"])), noiseThreshold)
+            outDict["m2Peaks"] = simplifyIons(normalise(outDict["m2Peaks"]), noiseThreshold)
             if outDict["charge"] > maxCharge or outDict["trueMass"] < minMass or len(outDict["m2Peaks"]) < minLength:
                 outDict = {"m2Peaks":[]}
                 continue
