@@ -3,24 +3,15 @@ import itertools
 from Bio import SeqIO
 import copy
 import operator
-
-#Returns mass of AA string using dictionary of AA mass values, with optional adjustment
-def returnPeptideMass (peptide, pKey, adjustment=0):
-    return (sum([pKey[i] for i in peptide])+adjustment)
+import numpy as np
 
 #Bins ion mass predictions to the closest 0.5, to enable quicker searching later
-def coarsen (invalue, tol=0.5):
-    return int(round(invalue/tol, 0)*tol*10)
+def coarsen (inArray, tol=0.5):
+    return (np.around(inArray/tol))*tol*10
 
 #Returns list of ion masses
-def returnIons (peptide, pKey, adjustment=0):
-    output = []
-    mass = adjustment
-    append = output.append    #Reduces function look up time
-    for i in peptide:
-        mass += pKey[i]
-        append(mass)
-    return output      
+def returnIons (peptideValues, adjustment=0):
+    return ((np.cumsum(peptideValues))+adjustment)
 
 def returnPostTranslationMods (peptideDict, mods):
     output = []
@@ -51,8 +42,8 @@ def genModdedPeptide (peptide, mods):
         output["mass"] += i[1]
     substring = peptideDict["peptide"][beginning:]
     outPep = outPep+substring
-    output["bIons"]= map(coarsen, returnIons(clean, pKey, float(1.00727)))
-    output["yIons"]= map(coarsen, returnIons(clean[::-1], pKey, float(19.02257)))
+    output["bIons"]= coarsen(returnIons(clean, pKey, float(1.00727)))
+    output["yIons"]= coarsen(returnIons(clean[::-1], pKey, float(19.02257)))
     return outPep
 
 def refine (peptide, conf):
@@ -62,10 +53,8 @@ def refine (peptide, conf):
 #Returns peptideDictionary
 def returnPeptideDict (peptide, proteins, conf):
     output = {"peptide":peptide, "proteins":proteins}
-    clean = cleanPeptide(peptide)
-    output["mass"]= returnPeptideMass(clean, conf["AAMassRef"], conf["other_constants"]["Mass+"])
-    output["bIons"]= map(coarsen, returnIons(clean, conf["AAMassRef"], conf["other_constants"]["B+"]))
-    output["yIons"]= map(coarsen, returnIons(clean[::-1], conf["AAMassRef"], conf["other_constants"]["Y+"]))
+    output["orderedMasses"] = np.array([conf["AAMassRef"][acid] for acid in cleanPeptide(peptide)])
+    output["mass"]= np.sum(output["orderedMasses"]) + conf["other_constants"]["Mass+"]
     return output
 
 #Generates inSilico peptide objects for input protein SeqRecord

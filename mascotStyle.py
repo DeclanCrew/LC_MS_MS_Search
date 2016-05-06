@@ -1,76 +1,111 @@
+'''
+MascotStyle, contains the main loop and the core scoring components of the
+search engine
+'''
 import MGFParse
 import PeptideDB
 import configs
 import csv
 
-#returns sublist of peptide dataset that has correct mass
-def matchMasses (searchIter, mass, tolerance):
+def matchMasses(searchIter, mass, tolerance):
+    '''Returns the subset of the searchDB that has a mass within tolerance'''
     output = []
-    peptides = {}
     for searchTerm in searchIter[int(mass)]:
         if float(searchTerm["mass"]) < (mass - tolerance):
             continue
         elif float(searchTerm["mass"]) < (mass + tolerance):
             searchTerm["delta"] = mass - float(searchTerm["mass"])
             searchTerm["bCount"] = 0
-            searchTerm["yCount"] = 0
             searchTerm["bSum"] = 0
+            searchTerm["yCount"] = 0
             searchTerm["ySum"] = 0
-            peptides[searchTerm["peptide"]] = searchTerm
-            for i in searchTerm["yIons"]:
-                output.append((i, "y", searchTerm["peptide"]))
-            for j in searchTerm["bIons"]:
-                output.append((j, "b", searchTerm["peptide"]))
+            output.append(searchTerm)
         else:
-            return [sorted(output, key=lambda entry: entry[0]), peptides]
+            return output
 
-def countMatches (matchList, spectra):
+def grabIons(matchList, conf):
+    '''Takes peptides and returns a sorted list of their predicted ions'''
+    output = []
+    for i in enumerate(matchList):
+        consts = conf["other_constants"]
+        masses = i[1]["orderedMasses"]
+        bIons = PeptideDB.coarsen(PeptideDB.returnIons(masses, consts["B+"]))
+        yIons = PeptideDB.coarsen(PeptideDB.returnIons(masses[::-1], consts["Y+"]))
+        for j in bIons:
+            output.append([int(j), int((i[0]*2)+1)])
+        for j in yIons:
+            output.append([int(j), int(i[0])*2])
+    return sorted(output, key=lambda entry: entry[0])
+
+def countMatches(matchList, spectra, conf):
+    '''Updates peptides with counts and intensity of matches against spectra'''
     if matchList == None:
         return []
+    ions = grabIons(matchList, conf)
     matchIndex = 0
-    ions = matchList[0]
-    peptides = matchList[1]
+    peptides = matchList
     for i in spectra["m2Peaks"]:
         if matchIndex == len(ions):
             break
-        while ions[matchIndex][0] < i and matchIndex < (len(ions)-1):
+        while ions[matchIndex][0] < i[0] and matchIndex < (len(ions)-1):
             matchIndex += 1
         if matchIndex == len(ions):
             break
-        if ions[matchIndex][0] > i:
+        if ions[matchIndex][0] > i[0]:
             continue
-        peptides[ions[matchIndex][2]][str(ions[matchIndex][1]+"Count")] += 1
-        peptides[ions[matchIndex][2]][str(ions[matchIndex][1]+"Sum")] += int(spectra["m2Peaks"][i])
+        if ions[matchIndex][1] % 2:
+            peptides[ions[matchIndex][1]/2]["yCount"] += 1
+            peptides[ions[matchIndex][1]/2]["ySum"] += int(i[1])
+        else:
+            peptides[(ions[matchIndex][1]+1)/2]["bCount"] += 1
+            peptides[(ions[matchIndex][1]+1)/2]["bSum"] += int(i[1])
         matchIndex += 1
     output = []
     for entry in peptides:
-        peptides[entry]["spec"] = spectra["name"]
-        output.append(peptides[entry])
-    return output         
+        entry["spec"] = spectra["name"]
+        output.append(entry)
+    return output
 
-def scoreCount (counter, yWeight, bWeight):
-    score = float((counter["yCount"]*yWeight)+(counter["bCount"]*bWeight))/len(counter["peptide"]*7)
-    return {"peptide": counter["peptide"], "proteins": counter["proteins"],"score": score*len(counter["peptide"])}
+def scoreMethod(entry, bias=2.5):
+    '''Simple mascot style scoring system, weights yIons stronger than b'''
+    return ((bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"]))
 
+def returnMaxima(data, value):
+    '''Returns the highest scoring peptide for each spectrum'''
+    sortedData = sorted(data, key=lambda entry: entry[value], reverse=True)
+    if len(sortedData) < 2:
+        yield sortedData[-1]
+    penultimate = sortedData[1]
+    maximum = sortedData[0]
+    maximum["diff"] = maximum[value] - penultimate[value]
+    yield maximum
 
-conf = configs.readConfigs("mascotStyle.cfg")
-peptides = PeptideDB.returnPeptides("target-decoy-gondii.fasta", conf)
-print "[+]"+str(len(peptides))+" mass entries generated."
+configurations = configs.readConfigs("mascotStyle.cfg")
+peptideSet = PeptideDB.returnPeptides("target-decoy-gondii.fasta",
+                                    configurations)
+print "[+]"+str(len(peptideSet))+" mass entries generated."
 MGFFile = open("combined.mgf", "rb")
-spectraGen = MGFParse.MGFReader(MGFFile, conf)
+spectraGen = MGFParse.MGFReader(MGFFile, configurations)
+##full_results = True
 
-outFile = open("scoreData.csv", "wb")
-keys = ["peptide", "spec", "proteins","delta", "bCount", "bSum", "yCount", "ySum"]
-dict_writer = csv.DictWriter(outFile, keys, dialect="excel-tab", extrasaction="ignore")
-dict_writer.writer.writerow(keys)
+##if full_results == True:
+fullFile = open("scoreData.csv", "wb")
+fullKeys = ["peptide", "spec", "proteins", "delta",
+            "bCount", "bSum", "yCount", "ySum"]
+full_writer = csv.DictWriter(fullFile, fullKeys, dialect="excel-tab",
+                             extrasaction="ignore")
+full_writer.writer.writerow(fullKeys)
 
-for i in spectraGen:
-    print "[-]Searching " + i["name"]
-    m1Matches = matchMasses(peptides, i["trueMass"], 0.001)
-    counter = countMatches(m1Matches, i)
+##maxFile = open("topScores.csv", "wb")
+##maxKeys = ["peptide", "spec", "proteins", "score", "diff", "delta", "bCount", "bSum", "yCount", "ySum"]
+
+for spectrum in spectraGen:
+    print ("[-]Searching %s \r" % (spectrum["name"])),
+    m1Matches = matchMasses(peptideSet, spectrum["trueMass"], 0.001)
+    counter = countMatches(m1Matches, spectrum, configurations)
     for result in counter:
-        dict_writer.writerow(result)
-        #scoreCounter = scoreCount(countMatches(j, i, 0.5), 5, 2)
-        #score.append(scoreCounter)
-        #print scoreCounter
-        
+##        if full_results == True:
+        full_writer.writerow(result)
+##        result["score"] = scoreMethod(result)
+##    maxScore = returnMaxima(counter, "score")
+print ""
