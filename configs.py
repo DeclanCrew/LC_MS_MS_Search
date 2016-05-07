@@ -1,7 +1,12 @@
+'''
+Reads configs from supplied config file, applies basic editing and returns as a
+nested dictionary for use by other modules.
+'''
 import ConfigParser
+import datetime
 
-#Reads amino acid masses from tab-delimited file to dictionary, for use as reference
 def readAAMasses (iFile, index):
+    '''Reads amino acid masses from tab-delimited file to dictionary.'''
     iData = open(iFile, "rb").readlines()
     oData = {}
     for line in iData:
@@ -10,6 +15,7 @@ def readAAMasses (iFile, index):
     return oData
 
 def readConfigs (configFile):
+    '''Generates nested config dictionary from input file.'''
     config = ConfigParser.ConfigParser()
     config.optionxform = str
     config.read(configFile)
@@ -27,8 +33,8 @@ def readConfigs (configFile):
                 output[i][j[0]]= float(j[1])
             else:
                 output[i][j[0]]= j[1]
-    output["AAMassRef"]= readAAMasses (output["amino_acid_options"]["aa_mass_file"],
-                                       isotope_columns[output["amino_acid_options"]["isotope_type"]])    
+    output["AAMassRef"]= readAAMasses(output["amino_acid_options"]["aa_mass_file"],
+                                      isotope_columns[output["amino_acid_options"]["isotope_type"]])
     for i in output["search_options"]:
         if i[-6:] == "_units":
             output["search_options"][i[:-6]] *= units[output["search_options"][i]]
