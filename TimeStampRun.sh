@@ -4,5 +4,5 @@ timestamp(){
     date +"%T"
 }
 timestamp
-python SearchEngine.py
+python mascotStyle.py
 timestamp

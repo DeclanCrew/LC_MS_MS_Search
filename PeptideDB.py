@@ -94,11 +94,12 @@ def proteinPreprocessing (proteins, conf, maxX=1, maxB=4):
             append(decoy)
     return output
             
-def returnPeptides (protFile, conf):
+def returnPeptides (conf):
+    protFile = conf["data"]["reference_sequences"]
     proteinFile = open(protFile, "rb")
-    proteins  = SeqIO.parse(proteinFile, "fasta")
+    proteins  = SeqIO.parse(proteinFile, conf["data"]["sequence_format"])
     peptideDB = {}
-    print ("[+]Digesting proteins in Silico")
+    print ("[+]Digesting proteins in Silico.")
     matchingRegex = re.compile(r"(?<=[KR])(?=[^P])")
     for iProtein in proteinPreprocessing(proteins, conf):
         peptides = iSilSpectra(iProtein, matchingRegex, conf)
@@ -107,9 +108,9 @@ def returnPeptides (protFile, conf):
                 peptideDB[i[0]].append(i[1])
             except KeyError:
                 peptideDB[i[0]] = [i[1]]
-    print "[+]Generating peptide spectra"
+    print "[+]Generating peptide spectra."
     peptideList = [returnPeptideDict(key, peptideDB[key], conf) for key in peptideDB]
-    print "[+]Sorting peptides"
+    print "[+]Sorting peptides."
     outHash = {}
     for i in sorted(peptideList, key=lambda entry: entry["mass"]):
         if int(i["mass"]) in outHash:
