@@ -5,53 +5,58 @@ import copy
 import operator
 import numpy as np
 
-#Bins ion mass predictions to the closest 0.5, to enable quicker searching later
 def coarsen (inArray, tol=0.5):
+    '''Bins ion mass predictions to integers within the closest 0.5.'''
     return (np.around(inArray/tol))*tol*10
 
-#Returns list of ion masses
 def returnIons (peptideValues, adjustment=0):
+    '''Returns numpy array of ion masses'''
     return ((np.cumsum(peptideValues))+adjustment)
 
 def returnPostTranslationMods (peptideDict, mods):
-    output = []
+    '''Takes peptide and finds all modifications that can be applied to it.'''
+    output = {}
     for i in mods:
         index = peptideDict["peptide"].find(i[0])
         while( index >= 0 ):
             index += len(i[0])
-            output.append((index, i[1]))
+            output[index] = i[1]
             index = peptideDict["peptide"].find(i[0], index)
     return output
 
-def genModdedPeptide (peptide, mods):
-    clean = cleanPeptide(peptide)
-    output["mass"]= returnPeptideMass(clean, pKey, float(18.009467553))
-    output["bIons"]= returnIons(clean, pKey, float(1.00727))
-    output["yIons"]= returnIons(clean[::-1], pKey, float(19.02257))
-    outPep = ""
-    beginning = 0
-    for i in mods:
-        substring = peptideDict["peptide"][beginning:i[0]]
-        outPep = outPep+substring
-        insert = str("[%s]" % (int(round(i[1], 0))))
-        outPep = outPep+insert
-        beginning = i[0]
-        for j in xrange(i[0]):
-            output["bIons"][j] += i[1]
-            output["yIons"][-(1+j)] += i[1]
-        output["mass"] += i[1]
-    substring = peptideDict["peptide"][beginning:]
-    outPep = outPep+substring
-    output["bIons"]= coarsen(returnIons(clean, pKey, float(1.00727)))
-    output["yIons"]= coarsen(returnIons(clean[::-1], pKey, float(19.02257)))
-    return outPep
+def genModdedPeptide (peptideDict, conf, mods):
+    '''Modifies peptide entry to incorporate modifications.'''
+    output = copy.deepcopy(peptideDict)
+    clean = cleanPeptide(output["peptide"])
+    adjust = []
+    for i in xrange(len(output["orderedMasses"])):
+        if i in mods:
+            adjust.append(mods[i])
+        else:
+            adjust.append(0)
+    output["orderedMasses"] += np.array(adjust)
+    pepName = list(clean)
+    for mod in mods:
+        pepName.insert(mod, str("[%i]" % (mods[mod])))
+    output["peptide"] = "".join(pepName)
+    output["mass"] = np.sum(output["orderedMasses"]) + conf["other_constants"]["Mass+"]
+    return output
 
-def refine (peptide, conf):
-    modifications = [(x, conf["variable_ptms"][x]) for x in conf["variable_ptms"]]
-    return
+def refine (peptideDict, conf):
+    modifications = conf["variable_ptms"].items()
+    validM = returnPostTranslationMods(peptideDict, modifications)
+    if len(applicableMods) > 0:
+        combinations = []
+        for length in xrange(conf["search_options"]["ptm_number"]):
+            combinations.append([{j: validM[j] for j in i} for i in combinations(validM, length)])
+        for subset in combinations:
+            for combo in subset:
+                yield genModdedPeptide(peptideDict, conf, combo)
+    else:
+        return peptideDict
 
-#Returns peptideDictionary
 def returnPeptideDict (peptide, proteins, conf):
+    '''Returns dictionary of peptide characteristics'''
     output = {"peptide":peptide, "proteins":proteins}
     output["orderedMasses"] = np.array([conf["AAMassRef"][acid] for acid in cleanPeptide(peptide)])
     output["mass"]= np.sum(output["orderedMasses"]) + conf["other_constants"]["Mass+"]
