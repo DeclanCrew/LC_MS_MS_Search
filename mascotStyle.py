@@ -6,136 +6,138 @@ import MGFParse
 import PeptideDB
 import configs
 import csv
-from itertools import groupby
 
-def matchMasses(searchIter, mass, tolerance):
+def match_masses(search_iter, mass, tolerance):
     '''Returns the subset of the searchDB that has a mass within tolerance'''
     output = []
-    for searchTerm in searchIter[int(mass)]:
-        if float(searchTerm["mass"]) < (mass - tolerance):
+    for search_term in search_iter[int(mass)]:
+        if float(search_term["mass"]) < (mass - tolerance):
             continue
-        elif float(searchTerm["mass"]) < (mass + tolerance):
-            searchTerm["delta"] = mass - float(searchTerm["mass"])
-            searchTerm["bCount"] = 0
-            searchTerm["bSum"] = 0
-            searchTerm["yCount"] = 0
-            searchTerm["ySum"] = 0
-            output.append(searchTerm)
+        elif float(search_term["mass"]) < (mass + tolerance):
+            search_term["delta"] = mass - float(search_term["mass"])
+            search_term["bCount"] = 0
+            search_term["bSum"] = 0
+            search_term["yCount"] = 0
+            search_term["ySum"] = 0
+            output.append(search_term)
         else:
             return output
 
-def grabIons(matchList, conf):
+def grab_ions(match_list, conf):
     '''Takes peptides and returns a sorted list of their predicted ions'''
     output = []
-    for i in enumerate(matchList):
+    for match in enumerate(match_list):
         consts = conf["other_constants"]
-        masses = i[1]["orderedMasses"]
+        masses = match[1]["orderedMasses"]
         bIons = PeptideDB.coarsen(PeptideDB.returnIons(masses, consts["B+"]))
         yIons = PeptideDB.coarsen(PeptideDB.returnIons(masses[::-1], consts["Y+"]))
-        for j in bIons:
-            output.append([int(j), int((i[0]*2)+1)])
-        for j in yIons:
-            output.append([int(j), int(i[0])*2])
+        for bIon in bIons:
+            output.append([int(bIon), int((match[0]*2)+1)])
+        for yIon in yIons:
+            output.append([int(yIon), int(match[0])*2])
     return sorted(output, key=lambda entry: entry[0])
 
-def countMatches(matchList, spectra, conf):
+def count_matches(match_list, spectra, conf):
     '''Updates peptides with counts and intensity of matches against spectra'''
-    if matchList == None:
+    if match_list == None:
         return []
-    ions = grabIons(matchList, conf)
-    matchIndex = 0
-    peptides = matchList
-    for i in spectra["m2Peaks"]:
-        if matchIndex == len(ions):
+    ions = grab_ions(match_list, conf)
+    match_index = 0
+    peptides = match_list
+    for peak in spectra["m2Peaks"]:
+        if match_index == len(ions):
             break
-        while ions[matchIndex][0] < i[0] and matchIndex < (len(ions)-1):
-            matchIndex += 1
-        if matchIndex == len(ions):
+        while ions[match_index][0] < peak[0] and match_index < (len(ions)-1):
+            match_index += 1
+        if match_index == len(ions):
             break
-        if ions[matchIndex][0] > i[0]:
+        if ions[match_index][0] > peak[0]:
             continue
-        if ions[matchIndex][1] % 2:
-            peptides[ions[matchIndex][1]/2]["yCount"] += 1
-            peptides[ions[matchIndex][1]/2]["ySum"] += int(i[1])
+        if ions[match_index][1] % 2:
+            peptides[ions[match_index][1]/2]["yCount"] += 1
+            peptides[ions[match_index][1]/2]["ySum"] += int(peak[1])
         else:
-            peptides[(ions[matchIndex][1]+1)/2]["bCount"] += 1
-            peptides[(ions[matchIndex][1]+1)/2]["bSum"] += int(i[1])
-        matchIndex += 1
+            peptides[(ions[match_index][1]+1)/2]["bCount"] += 1
+            peptides[(ions[match_index][1]+1)/2]["bSum"] += int(peak[1])
+        match_index += 1
     output = []
     for entry in peptides:
         entry["spec"] = spectra["name"]
         output.append(entry)
     return output
 
-def scoreMethod(entry, bias=2.5):
+def score_method(entry, bias=2.5):
     '''Simple mascot style scoring system, weights yIons stronger than b'''
-    return ((bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"]))
+    return (bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"])
 
-def returnMaxima(data, value):
+def return_maxima(data, value):
     '''Returns the highest scoring peptide for each spectrum'''
-    sortedData = sorted(data, key=lambda entry: entry[value], reverse=True)
-    if len(sortedData) > 1:
-        penultimate = sortedData[1]
+    sorted_data = sorted(data, key=lambda entry: entry[value], reverse=True)
+    if len(sorted_data) > 1:
+        penultimate = sorted_data[1]
     else:
-        penultimate = sortedData[0]
-    maximum = sortedData[0]
+        penultimate = sorted_data[0]
+    maximum = sorted_data[0]
     maximum["diff"] = maximum[value] - penultimate[value]
     return maximum
 
-def generateWriter(dataFileName, keys):
-    dataFile = open(dataFileName, "wb")
-    writerObject = csv.DictWriter(dataFile, keys, dialect="excel-tab",
+def generate_writer(data_file_name, keys):
+    '''Generates results writer, creating a file with header and then
+       returning a writer function for each row that needs writing.'''
+    data_file = open(data_file_name, "wb")
+    writer_object = csv.DictWriter(data_file, keys, dialect="excel-tab",
                                   extrasaction="ignore")
-    writerObject.writer.writerow(keys)
+    writer_object.writer.writerow(keys)
     while True:
-        yield writerObject.writerow
+        yield writer_object.writerow
 
 configurations = configs.readConfigs("mascotStyle.cfg")
-fileConfs = configurations["data"]
-peptideSet = PeptideDB.returnPeptides(configurations)
-print "[+]"+str(len(peptideSet))+" mass entries generated."
-spectra_file = fileConfs["spectra_file"]
+file_confs = configurations["data"]
+peptide_set = PeptideDB.returnPeptides(configurations)
+print "[+]"+str(len(peptide_set))+" mass entries generated."
+spectra_file = file_confs["spectra_file"]
 MGFFile = open(spectra_file, "rb")
-spectraGen = MGFParse.MGFReader(MGFFile, configurations)
-full_results = bool(fileConfs["write_full_scores"])
+spectra_gen = MGFParse.MGFReader(MGFFile, configurations)
+full_results = bool(file_confs["write_full_scores"])
 
 if full_results == True:
-    fullKeys = ["peptide", "spec", "proteins", "delta",
+    full_keys = ["peptide", "spec", "proteins", "delta",
                 "bCount", "bSum", "yCount", "ySum"]
-    full_writer = generateWriter(fileConfs["full_scores_file"], fullKeys)
+    full_writer = generate_writer(file_confs["full_scores_file"], full_keys)
 
-topKeys = ["peptide", "spec", "proteins", "score", "diff", "delta",
+top_keys = ["peptide", "spec", "proteins", "score", "diff", "delta",
            "bCount", "bSum", "yCount", "ySum"]
-top_writer = generateWriter(fileConfs["top_scores_file"], topKeys)
-topScores = []
+top_writer = generate_writer(file_confs["top_scores_file"], top_keys)
+top_scores = []
 
-for spectrum in spectraGen:
+for spectrum in spectra_gen:
     print ("[+]Searching %s. \r" % (spectrum["name"])),
-    m1Matches = matchMasses(peptideSet, spectrum["trueMass"], 0.001)
-    counter = countMatches(m1Matches, spectrum, configurations)
+    tol = configurations["search_options"]["initial_tolerance"]*spectrum["charge"]
+    m1Matches = match_masses(peptide_set, spectrum["trueMass"], tol)
+    counter = count_matches(m1Matches, spectrum, configurations)
     if len(counter) < 2:
         continue
     for result in counter:
         if full_results == True:
             next(full_writer)(result)
-        result["score"] = scoreMethod(result)
-    topScore = returnMaxima(counter, "score")
+        result["score"] = score_method(result)
+    topScore = return_maxima(counter, "score")
     next(top_writer)(topScore)
-    topScores.append(topScore)
+    top_scores.append(topScore)
 print ""
 print "[+]Generating protein level scores."
 
-clearPepSet = set()
-proteinScores = {}
-for i in sorted(topScores, key=lambda entry: entry["diff"], reverse=True):
-    if i["peptide"] in clearPepSet:
+clear_pep_set = set()
+protein_scores = {}
+for i in sorted(top_scores, key=lambda entry: entry["diff"], reverse=True):
+    if i["peptide"] in clear_pep_set:
         continue
-    clearPepSet.add(i["peptide"])
+    clear_pep_set.add(i["peptide"])
     for j in i["proteins"]:
-        if j in proteinScores:
-            proteinScores[j] += i["diff"]
+        if j in protein_scores:
+            protein_scores[j] += i["diff"]
         else:
-            proteinScores[j] = i["diff"]
-protFile = open(fileConfs["prot_scores_file"], "wb")
-for protein in sorted(proteinScores.items(), key=lambda prot: prot[1], reverse=True):
-    protFile.write(str(protein[0]+"\t"+str(protein[1])+"\n"))
+            protein_scores[j] = i["diff"]
+prot_file = open(file_confs["prot_scores_file"], "wb")
+for protein in sorted(protein_scores.items(), key=lambda prot: prot[1], reverse=True):
+    prot_file.write(str(protein[0]+"\t"+str(protein[1])+"\n"))

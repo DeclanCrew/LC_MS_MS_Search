@@ -1,33 +1,36 @@
+'''
+Contains a number of functions for generating virtual spectra from a protein
+file, makes use of biopython for protein file parsing.
+'''
+
 import re
 import itertools
 from Bio import SeqIO
 import copy
-import operator
 import numpy as np
 
-def coarsen (inArray, tol=0.5):
+def coarsen(inArray, tol=0.5):
     '''Bins ion mass predictions to integers within the closest 0.5.'''
     return (np.around(inArray/tol))*tol*10
 
-def returnIons (peptideValues, adjustment=0):
-    '''Returns numpy array of ion masses'''
-    return ((np.cumsum(peptideValues))+adjustment)
+def returnIons(peptideValues, adjustment=0):
+    '''Returns numpy array of ion masses from AA mass array.'''
+    return (np.cumsum(peptideValues))+adjustment
 
-def returnPostTranslationMods (peptideDict, mods):
+def returnPostTranslationMods(peptideDict, mods):
     '''Takes peptide and finds all modifications that can be applied to it.'''
     output = {}
     for i in mods:
         index = peptideDict["peptide"].find(i[0])
-        while( index >= 0 ):
+        while index >= 0:
             index += len(i[0])
             output[index] = i[1]
             index = peptideDict["peptide"].find(i[0], index)
     return output
 
-def genModdedPeptide (peptideDict, conf, mods):
+def genModdedPeptide(peptideDict, conf, mods):
     '''Modifies peptide entry to incorporate modifications.'''
     output = copy.deepcopy(peptideDict)
-    clean = cleanPeptide(output["peptide"])
     adjust = []
     for i in xrange(len(output["orderedMasses"])):
         if i in mods:
@@ -35,35 +38,39 @@ def genModdedPeptide (peptideDict, conf, mods):
         else:
             adjust.append(0)
     output["orderedMasses"] += np.array(adjust)
-    pepName = list(clean)
+    pepName = list(output["peptide"])
     for mod in mods:
         pepName.insert(mod, str("[%i]" % (mods[mod])))
     output["peptide"] = "".join(pepName)
     output["mass"] = np.sum(output["orderedMasses"]) + conf["other_constants"]["Mass+"]
     return output
 
-def refine (peptideDict, conf):
+def refine(peptideDict, conf):
+    '''Generates modified peptide entries for a given peptide,
+       for second pass search.'''
     modifications = conf["variable_ptms"].items()
     validM = returnPostTranslationMods(peptideDict, modifications)
-    if len(applicableMods) > 0:
-        combinations = []
+    if len(validM) > 0:
+        combos = []
         for length in xrange(conf["search_options"]["ptm_number"]):
-            combinations.append([{j: validM[j] for j in i} for i in combinations(validM, length)])
-        for subset in combinations:
+            combos.append([{j: validM[j] for j in i}
+                                 for i in itertools.combinations(validM, length)])
+        for subset in combos:
             for combo in subset:
                 yield genModdedPeptide(peptideDict, conf, combo)
     else:
-        return peptideDict
+        yield peptideDict
 
-def returnPeptideDict (peptide, proteins, conf):
+def returnPeptideDict(peptide, proteins, conf):
     '''Returns dictionary of peptide characteristics'''
     output = {"peptide":peptide, "proteins":proteins}
-    output["orderedMasses"] = np.array([conf["AAMassRef"][acid] for acid in cleanPeptide(peptide)])
-    output["mass"]= np.sum(output["orderedMasses"]) + conf["other_constants"]["Mass+"]
+    output["orderedMasses"] = np.array([conf["AAMassRef"][acid]
+                                        for acid in cleanPeptide(peptide)])
+    output["mass"] = np.sum(output["orderedMasses"]) + conf["other_constants"]["Mass+"]
     return output
 
-#Generates inSilico peptide objects for input protein SeqRecord
-def iSilSpectra (protein, regEx, conf):
+def iSilSpectra(protein, regEx, conf):
+    '''Splits a protein entry into a series of peptide strings for processing.'''
     output = []
     mProtein = str("n%sc" %(protein.seq))
     peptides = regEx.sub('\n', str(mProtein)).split()
@@ -74,14 +81,16 @@ def iSilSpectra (protein, regEx, conf):
                 output.append((i, protein.name))
     return output
 
-def cleanPeptide (peptide):
+def cleanPeptide(peptide):
+    '''Removes sentinel values from a peptide string before mass analysis.'''
     if peptide[0] == "n":
         peptide = peptide[1:]
     if peptide[len(peptide)-1] == "c":
         peptide = peptide[:(len(peptide)-1)]
     return peptide
 
-def proteinPreprocessing (proteins, conf, maxX=1, maxB=4):
+def proteinPreprocessing(proteins, conf):
+    '''Removes proteins with unsupported characters, also generates decoy proteins.'''
     output = []
     useDecoy = bool(conf["search_options"]["include_decoy"])
     append = output.append
@@ -92,19 +101,24 @@ def proteinPreprocessing (proteins, conf, maxX=1, maxB=4):
             continue
         else:
             append(protein)
-        if useDecoy == True:
+        if useDecoy:
             decoy = copy.deepcopy(protein)
             decoy.seq = protein.seq[::-1]
             decoy.name = str("DECOY_%s" % (protein.name))
             append(decoy)
     return output
-            
-def returnPeptides (conf):
+
+def returnPeptides(conf):
+    '''
+    Generates dictionary of unique peptide entries from a given reference sequence
+    dataset, returns dictionary of mass-sorted peptides, with each key holding all
+    peptides with the same dalton mass. Also implements protein processing from confs.
+    '''
     protFile = conf["data"]["reference_sequences"]
     proteinFile = open(protFile, "rb")
-    proteins  = SeqIO.parse(proteinFile, conf["data"]["sequence_format"])
+    proteins = SeqIO.parse(proteinFile, conf["data"]["sequence_format"])
     peptideDB = {}
-    print ("[+]Digesting proteins in Silico.")
+    print "[+]Digesting proteins in Silico."
     matchingRegex = re.compile(r"(?<=[KR])(?=[^P])")
     for iProtein in proteinPreprocessing(proteins, conf):
         peptides = iSilSpectra(iProtein, matchingRegex, conf)
