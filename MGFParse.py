@@ -7,62 +7,62 @@ import numpy as np
 def normalise(iM2array):
     '''Normalises input peak array to maximum intensity of 100'''
     iMax = np.amax(iM2array, axis=0)[1]
-    iM2array[:,1] *= 100/iMax
+    iM2array[:, 1] *= 100/iMax
     return iM2array
 
-def simplifyIons(iM2array, threshold):
+def simplify_ions(iM2array, threshold):
     '''Coalesces peaks to half dalton ranges, removes peaks with
        Intensities below threshhold'''
     output = {}
     for i in iM2array:
-        tollBin = int(i[0])
-        if tollBin in output:
-            output[tollBin] += int(i[1])
+        toll_bin = int(i[0])
+        if toll_bin in output:
+            output[toll_bin] += int(i[1])
         else:
-            output[tollBin] = int(i[1])
+            output[toll_bin] = int(i[1])
     filtered = [[key, value] for key, value in output.iteritems()
                 if value >= threshold]
     return sorted(filtered, key=lambda t: t[0])
 
 
-def MGFReader(mgfFile, conf):
-    '''Generates peak dictionaries from entries in MGFfile if in thresholds'''
-    outDict = {"m2Peaks":[]}
-    protonMass = float(conf["other_constants"]["H+"])
-    noiseThreshold = conf["spectrum_options"]["noiseThreshold"]
-    maxCharge = conf["spectrum_options"]["maxCharge"]
-    minMass = conf["spectrum_options"]["minMass"]
-    minLength = conf["spectrum_options"]["minLength"]
+def MGFReader(mgf_file, conf):
+    '''Generates peak dictionaries from entries in mgf_file if in thresholds'''
+    out_dict = {"m2Peaks":[]}
+    proton_mass = float(conf["other_constants"]["H+"])
+    noise_threshold = conf["spectrum_options"]["noiseThreshold"]
+    max_charge = conf["spectrum_options"]["maxCharge"]
+    min_mass = conf["spectrum_options"]["minMass"]
+    min_length = conf["spectrum_options"]["minLength"]
     while True:
-        line = mgfFile.readline()
+        line = mgf_file.readline()
         if not line:
             break
         delimited = line.split(" ")
         if "BEGIN" == line[:5]:
             continue
         elif "TITLE" == line[:5]:
-            outDict["name"] = delimited[0][6:]
+            out_dict["name"] = delimited[0][6:]
         elif "PEPMA" == line[:5]:
-            outDict["mass"] = float(delimited[0][8:])
+            out_dict["mass"] = float(delimited[0][8:])
         elif "CHARG" == line[:5]:
-            outDict["charge"] = int(line[7])
+            out_dict["charge"] = int(line[7])
         elif "RTINS" == line[:5]:
-            outDict["name"] += "-"+line[12:-2]
+            out_dict["name"] += "-"+line[12:-2]
         elif "END" == line[:3]:
-            outDict["trueMass"] = float((outDict["mass"]
-                                         - protonMass)
-                                         * outDict["charge"])
-            outDict["m2Peaks"] = simplifyIons(normalise(np.array(
-                outDict["m2Peaks"])), noiseThreshold)
-            if outDict["charge"] > maxCharge or outDict["trueMass"] < minMass \
-               or len(outDict["m2Peaks"]) < minLength:
-                outDict = {"m2Peaks": []}
+            out_dict["trueMass"] = float((out_dict["mass"]
+                                         - proton_mass)
+                                         * out_dict["charge"])
+            out_dict["m2Peaks"] = simplify_ions(normalise(np.array(
+                out_dict["m2Peaks"])), noise_threshold)
+            if out_dict["charge"] > max_charge or out_dict["trueMass"] < min_mass \
+               or len(out_dict["m2Peaks"]) < min_length:
+                out_dict = {"m2Peaks": []}
                 continue
-            yield outDict
-            outDict = {"m2Peaks":[]}
+            yield out_dict
+            out_dict = {"m2Peaks":[]}
         elif len(delimited) == 2:
-            peakBin = int(round(float(delimited[0])/0.5, 0)*5)
-            if len(outDict["m2Peaks"]) > 0 and peakBin == outDict["m2Peaks"][-1][0]:
-                outDict["m2Peaks"][-1][1] += float(delimited[1])
+            peak_bin = int(round(float(delimited[0])/0.5, 0)*5)
+            if len(out_dict["m2Peaks"]) > 0 and peak_bin == out_dict["m2Peaks"][-1][0]:
+                out_dict["m2Peaks"][-1][1] += float(delimited[1])
             else:
-                outDict["m2Peaks"].append([peakBin, float(delimited[1])])
+                out_dict["m2Peaks"].append([peak_bin, float(delimited[1])])

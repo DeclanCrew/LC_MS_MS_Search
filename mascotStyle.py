@@ -53,20 +53,23 @@ def count_matches(match_list, spectra, conf):
             break
         if ions[match_index][0] > peak[0]:
             continue
-        if ions[match_index][1] % 2:
-            peptides[ions[match_index][1]/2]["yCount"] += 1
-            peptides[ions[match_index][1]/2]["ySum"] += int(peak[1])
-        else:
-            peptides[(ions[match_index][1]+1)/2]["bCount"] += 1
-            peptides[(ions[match_index][1]+1)/2]["bSum"] += int(peak[1])
-        match_index += 1
+        while ions[match_index][0] == peak[0]:
+            if ions[match_index][1] % 2:
+                peptides[ions[match_index][1]/2]["yCount"] += 1
+                peptides[ions[match_index][1]/2]["ySum"] += int(peak[1])
+            else:
+                peptides[(ions[match_index][1]+1)/2]["bCount"] += 1
+                peptides[(ions[match_index][1]+1)/2]["bSum"] += int(peak[1])
+            match_index += 1
+            if match_index == len(ions):
+                break
     output = []
     for entry in peptides:
         entry["spec"] = spectra["name"]
         output.append(entry)
     return output
 
-def score_method(entry, bias=2.5):
+def score_method(entry, bias=1.9):
     '''Simple mascot style scoring system, weights yIons stronger than b'''
     return (bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"])
 
@@ -112,7 +115,7 @@ top_scores = []
 
 for spectrum in spectra_gen:
     print ("[+]Searching %s. \r" % (spectrum["name"])),
-    tol = configurations["search_options"]["initial_tolerance"]*spectrum["charge"]
+    tol = configurations["search_options"]["initial_tolerance"]*spectrum["trueMass"]
     m1Matches = match_masses(peptide_set, spectrum["trueMass"], tol)
     counter = count_matches(m1Matches, spectrum, configurations)
     if len(counter) < 2:

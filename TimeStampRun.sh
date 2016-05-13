@@ -6,3 +6,5 @@ timestamp(){
 timestamp
 python mascotStyle.py
 timestamp
+tandem input.xml
+timestamp
