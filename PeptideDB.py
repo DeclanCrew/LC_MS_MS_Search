@@ -5,7 +5,6 @@ file, makes use of biopython for protein file parsing.
 
 import re
 import itertools
-from Bio import SeqIO
 import copy
 import numpy as np
 
@@ -108,6 +107,14 @@ def proteinPreprocessing(proteins, conf):
             append(decoy)
     return output
 
+def peptideDatabaseParse():
+    try:
+        from Bio import SeqIO
+        return SeqIO.parse
+    except ImportError:
+        import fastaParse
+        return fastaParse.fastaParser
+        
 def returnPeptides(conf):
     '''
     Generates dictionary of unique peptide entries from a given reference sequence
@@ -116,7 +123,8 @@ def returnPeptides(conf):
     '''
     protFile = conf["data"]["reference_sequences"]
     proteinFile = open(protFile, "rb")
-    proteins = SeqIO.parse(proteinFile, conf["data"]["sequence_format"])
+    protparser = peptideDatabaseParse()
+    proteins = protparser(proteinFile, conf["data"]["sequence_format"])
     peptideDB = {}
     print "[+]Digesting proteins in Silico."
     matchingRegex = re.compile(r"(?<=[KR])(?=[^P])")
