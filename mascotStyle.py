@@ -5,6 +5,7 @@ search engine
 import MGFParse
 import PeptideDB
 import configs
+import scorer
 import csv
 
 def match_masses(search_iter, mass, tolerance):
@@ -69,48 +70,18 @@ def count_matches(match_list, spectra, conf):
         output.append(entry)
     return output
 
-def score_method(entry, bias=1.9):
-    '''Simple mascot style scoring system, weights yIons stronger than b'''
-    return (bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"])
-
-def return_maxima(data, value):
-    '''Returns the highest scoring peptide for each spectrum'''
-    sorted_data = sorted(data, key=lambda entry: entry[value], reverse=True)
-    if len(sorted_data) > 1:
-        penultimate = sorted_data[1]
-    else:
-        penultimate = sorted_data[0]
-    maximum = sorted_data[0]
-    maximum["diff"] = maximum[value] - penultimate[value]
-    return maximum
-
-def generate_writer(data_file_name, keys):
-    '''Generates results writer, creating a file with header and then
-       returning a writer function for each row that needs writing.'''
-    data_file = open(data_file_name, "wb")
-    writer_object = csv.DictWriter(data_file, keys, dialect="excel-tab",
-                                  extrasaction="ignore")
-    writer_object.writer.writerow(keys)
-    while True:
-        yield writer_object.writerow
-
 configurations = configs.readConfigs("mascotStyle.cfg")
 file_confs = configurations["data"]
+
 peptide_set = PeptideDB.returnPeptides(configurations)
 print "[+]"+str(len(peptide_set))+" mass entries generated."
+
 spectra_file = file_confs["spectra_file"]
 MGFFile = open(spectra_file, "rb")
 spectra_gen = MGFParse.MGFReader(MGFFile, configurations)
-full_results = bool(file_confs["write_full_scores"])
 
-if full_results == True:
-    full_keys = ["peptide", "spec", "proteins", "delta",
-                "bCount", "bSum", "yCount", "ySum"]
-    full_writer = generate_writer(file_confs["full_scores_file"], full_keys)
+score_mod = scorer.Score(configurations)
 
-top_keys = ["peptide", "spec", "proteins", "score", "diff", "delta",
-           "bCount", "bSum", "yCount", "ySum"]
-top_writer = generate_writer(file_confs["top_scores_file"], top_keys)
 top_scores = []
 
 for spectrum in spectra_gen:
@@ -118,29 +89,22 @@ for spectrum in spectra_gen:
     tol = configurations["search_options"]["initial_tolerance"]*spectrum["trueMass"]
     m1Matches = match_masses(peptide_set, spectrum["trueMass"], tol)
     counter = count_matches(m1Matches, spectrum, configurations)
-    if len(counter) < 2:
-        continue
-    for result in counter:
-        if full_results == True:
-            next(full_writer)(result)
-        result["score"] = score_method(result)
-    topScore = return_maxima(counter, "score")
-    next(top_writer)(topScore)
-    top_scores.append(topScore)
+    top_scores.append(score_mod.score_series(counter))
+
 print ""
 print "[+]Generating protein level scores."
 
 clear_pep_set = set()
 protein_scores = {}
-for i in sorted(top_scores, key=lambda entry: entry["diff"], reverse=True):
+for i in sorted(top_scores, key=lambda entry: entry["mainscore"], reverse=True):
     if i["peptide"] in clear_pep_set:
         continue
     clear_pep_set.add(i["peptide"])
     for j in i["proteins"]:
         if j in protein_scores:
-            protein_scores[j] += i["diff"]
+            protein_scores[j] += i["mainscore"]
         else:
-            protein_scores[j] = i["diff"]
+            protein_scores[j] = i["mainscore"]
 prot_file = open(file_confs["prot_scores_file"], "wb")
 for protein in sorted(protein_scores.items(), key=lambda prot: prot[1], reverse=True):
     prot_file.write(str(protein[0]+"\t"+str(protein[1])+"\n"))
