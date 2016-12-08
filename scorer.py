@@ -35,7 +35,7 @@ class Score:
         
     def score_method(self, entry):
         '''Simple mascot style scoring system, weights yIons stronger than b'''
-        return (self.mascot_bias*entry["yCount"]*entry["ySum"])+(entry["bCount"]*entry["bSum"])
+        return ((self.mascot_bias*entry["ySum"])+entry["bSum"])*entry["yCount"]*entry["bCount"]
 
     def secondary_scoring(self, score_series):
         '''XTandem style stage 2 scoring, requires numpy for linear regression'''
@@ -62,7 +62,7 @@ class Score:
                 top_result = result
         if not top_result:
             return None
-        primary_scores = np.log10(np.array(sorted([i["score"] for i  in series]))+1)
+        primary_scores = np.log10(np.array(sorted([i["score"] for i  in series if i["score"] > 0])))
         top_result["stage2"] = self.secondary_scoring(primary_scores)
         
         top_result["decoy"] = self.decoy_query(top_result)

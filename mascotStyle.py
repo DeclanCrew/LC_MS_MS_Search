@@ -89,7 +89,9 @@ for spectrum in spectra_gen:
     tol = configurations["search_options"]["initial_tolerance"]*spectrum["trueMass"]
     m1Matches = match_masses(peptide_set, spectrum["trueMass"], tol)
     counter = count_matches(m1Matches, spectrum, configurations)
-    top_scores.append(score_mod.score_series(counter))
+    score = score_mod.score_series(counter)
+    if score:
+        top_scores.append(score)
 
 print ""
 print "[+]Generating protein level scores."
