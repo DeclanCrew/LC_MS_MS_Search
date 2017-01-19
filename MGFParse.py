@@ -20,9 +20,9 @@ def simplify_ions(iM2array, threshold):
             output[toll_bin] += int(i[1])
         else:
             output[toll_bin] = int(i[1])
-    filtered = [[key, value] for key, value in output.iteritems()
-                if value >= threshold]
-    return sorted(filtered, key=lambda t: t[0])
+    filtered = {key: value for key, value in output.iteritems()
+                if value >= threshold}
+    return filtered
 
 
 def MGFReader(mgf_file, conf):

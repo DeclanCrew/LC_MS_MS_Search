@@ -38,7 +38,7 @@ class Score:
         return ((self.mascot_bias*entry["ySum"])+entry["bSum"])*entry["yCount"]*entry["bCount"]
 
     def secondary_scoring(self, score_series):
-        '''XTandem style stage 2 scoring, requires numpy for linear regression'''
+        '''XTandem style stage 2 scoring, requires scipy for linear regression'''
         if len(score_series) <= 2:
             return 0
         y, x = np.histogram(score_series[:-1])
@@ -47,7 +47,7 @@ class Score:
         return (score_series[-1]*slope + intercept)*-1
 
     def composite_score(self, score_record):
-        '''Consolidates two scoring methods'''
+        '''Consolidates the two scoring methods'''
         return score_record["score"]+(self.comp_bias*score_record["stage2"])
 
     def score_series(self, series):

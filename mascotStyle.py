@@ -1,12 +1,11 @@
 '''
-MascotStyle, contains the main loop and the core scoring components of the
+MascotStyle, contains the main loop and the core matching component of the
 search engine
 '''
 import MGFParse
 import PeptideDB
 import configs
 import scorer
-import csv
 
 def match_masses(search_iter, mass, tolerance):
     '''Returns the subset of the searchDB that has a mass within tolerance'''
@@ -27,48 +26,31 @@ def match_masses(search_iter, mass, tolerance):
 def grab_ions(match_list, conf):
     '''Takes peptides and returns a sorted list of their predicted ions'''
     output = []
-    for match in enumerate(match_list):
-        consts = conf["other_constants"]
-        masses = match[1]["orderedMasses"]
-        bIons = PeptideDB.coarsen(PeptideDB.returnIons(masses, consts["B+"]))
-        yIons = PeptideDB.coarsen(PeptideDB.returnIons(masses[::-1], consts["Y+"]))
-        for bIon in bIons:
-            output.append([int(bIon), int((match[0]*2)+1)])
-        for yIon in yIons:
-            output.append([int(yIon), int(match[0])*2])
-    return sorted(output, key=lambda entry: entry[0])
-
-def count_matches(match_list, spectra, conf):
-    '''Updates peptides with counts and intensity of matches against spectra'''
-    if match_list == None:
-        return []
-    ions = grab_ions(match_list, conf)
-    match_index = 0
-    peptides = match_list
-    for peak in spectra["m2Peaks"]:
-        if match_index == len(ions):
-            break
-        while ions[match_index][0] < peak[0] and match_index < (len(ions)-1):
-            match_index += 1
-        if match_index == len(ions):
-            break
-        if ions[match_index][0] > peak[0]:
-            continue
-        while ions[match_index][0] == peak[0]:
-            if ions[match_index][1] % 2:
-                peptides[ions[match_index][1]/2]["yCount"] += 1
-                peptides[ions[match_index][1]/2]["ySum"] += int(peak[1])
-            else:
-                peptides[(ions[match_index][1]+1)/2]["bCount"] += 1
-                peptides[(ions[match_index][1]+1)/2]["bSum"] += int(peak[1])
-            match_index += 1
-            if match_index == len(ions):
-                break
-    output = []
-    for entry in peptides:
-        entry["spec"] = spectra["name"]
-        output.append(entry)
+    for index, match in enumerate(match_list):
+        if "b" not in match:
+            match["b"] = PeptideDB.coarsen(PeptideDB.returnIons(
+                match["orderedMasses"], conf["other_constants"]["B+"]))
+        if "y" not in match:
+            match["y"] = PeptideDB.coarsen(PeptideDB.returnIons(
+                match["orderedMasses"][::-1], conf["other_constants"]["Y+"]))
+        for bIon in match["b"]:
+            output.append([int(bIon), index, "b"])
+        for yIon in match["y"]:
+            output.append([int(yIon), index, "y"])
     return output
+
+def count_matches(peptides, spectra, conf):
+    '''Updates peptides with counts and intensity of matches against spectra'''
+    if not peptides:
+        return []
+    ions = grab_ions(peptides, conf)
+    for peak, index, iontype in ions:
+        if peak in spectra["m2Peaks"]:
+            peptides[index][iontype+"Count"] += 1
+            peptides[index][iontype+"Sum"] += spectra["m2Peaks"][peak]
+    for peptide in peptides:
+        peptide["spec"] = spectra["name"]
+    return peptides
 
 configurations = configs.readConfigs("mascotStyle.cfg")
 file_confs = configurations["data"]
